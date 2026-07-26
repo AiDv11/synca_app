@@ -7,26 +7,13 @@ import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 import 'package:synca_app/src/modules/common/auth/model/services/auth_service.dart';
 import 'package:synca_app/src/modules/common/auth/ui/page/login_page.dart';
 
-/// Human-readable names for the roles, for the dropdown.
-///
-/// This is an `extension` — it adds a `label` getter to `UserRole` without
-/// editing the enum. It lives here, in the UI layer, on purpose: how a role is
-/// *worded on screen* is a presentation decision, and `AppUser` shouldn't have
-/// to care about it. Translating the app later would change only this file.
-extension UserRoleLabel on UserRole {
-  String get label {
-    switch (this) {
-      case UserRole.member:
-        return 'Group Member';
-      case UserRole.leader:
-        return 'Group Leader';
-      case UserRole.coordinator:
-        return 'Module Coordinator';
-    }
-  }
-}
-
 /// Sign-up screen: name, email, password, role.
+///
+/// The role dropdown below reads `role.label`, which now comes from the
+/// `UserRole` enum itself. This file used to declare an `extension` supplying
+/// that getter, but a real member on the enum always wins over an extension —
+/// so once `UserRole.label` existed the extension here was dead code that
+/// merely looked like it was doing the work. It has been removed.
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -76,8 +63,12 @@ class _RegisterPageState extends State<RegisterPage> {
 
       _showSnackBar('Account created for ${user.name}', isError: false);
 
-      // TODO: route to the member / leader / coordinator home screen based on
-      // user.role once those screens exist.
+      // Registering signs the new user in, so the auth stream has already
+      // fired and AuthGate underneath has rebuilt into their dashboard.
+      // Closing this route reveals it. Same reasoning as `LoginPage._submit`:
+      // the gate decides which screen a role gets, not this page.
+      final navigator = Navigator.of(context);
+      if (navigator.canPop()) navigator.pop();
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       _showSnackBar(_messageForAuthError(e.code));

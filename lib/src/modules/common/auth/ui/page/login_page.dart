@@ -72,15 +72,23 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
 
       if (user == null) {
-        // Credentials were valid but no Firestore profile exists.
+        // Credentials were valid but no Firestore profile exists. We still
+        // leave, because they *are* signed in now — AuthGate has a dedicated
+        // screen for this dead end, with a sign-out button. Keeping them on a
+        // login form they have already passed would just be confusing.
         _showSnackBar('Your profile is missing. Please register again.');
-        return;
+      } else {
+        _showSnackBar('Welcome back, ${user.name}', isError: false);
       }
 
-      _showSnackBar('Welcome back, ${user.name}', isError: false);
-
-      // TODO: route to the member / leader / coordinator home screen based on
-      // user.role once those screens exist.
+      // This screen was pushed on top of AuthGate, so closing it reveals the
+      // gate — which has already rebuilt into the right dashboard, because
+      // signing in pushed a new value down the auth stream.
+      //
+      // Note what this is *not*: we don't push a dashboard from here. The gate
+      // owns that decision, and it owns it in one place. All this page has to
+      // do is get out of the way.
+      _closeIfPushed();
     } on FirebaseAuthException catch (e) {
       // `on ... catch` catches only this type. Firebase reports failures as an
       // exception carrying a `code` we can translate into plain English.
@@ -97,6 +105,16 @@ class _LoginPageState extends State<LoginPage> {
       // button forever.
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Pops this route if there is something to pop back to.
+  ///
+  /// The `canPop` check is the safety net: normally this page is pushed from
+  /// the landing page and there is a route underneath, but if it is ever shown
+  /// as the very first screen, popping would try to close the app instead.
+  void _closeIfPushed() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
   }
 
   /// Turns a Firebase error code into something a student can act on.

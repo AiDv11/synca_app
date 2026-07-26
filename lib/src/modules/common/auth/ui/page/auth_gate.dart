@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 import 'package:synca_app/src/modules/common/auth/model/services/auth_service.dart';
-import 'package:synca_app/src/modules/common/auth/ui/page/login_page.dart';
+import 'package:synca_app/src/modules/common/onboarding/ui/page/landing_page.dart';
 import 'package:synca_app/src/modules/role/coordinator/ui/page/coordinator_dashboard.dart';
 import 'package:synca_app/src/modules/role/leader/ui/page/leader_dashboard.dart';
 import 'package:synca_app/src/modules/role/member/ui/page/member_dashboard.dart';
@@ -14,13 +14,19 @@ import 'package:synca_app/src/modules/role/member/ui/page/member_dashboard.dart'
 /// This is the app's `home`, so it is the first thing built. It answers two
 /// questions in order:
 ///
-///   1. Is anyone signed in?  → no: [LoginPage]
+///   1. Is anyone signed in?  → no: [LandingPage]
 ///   2. What is their role?   → member / leader / coordinator dashboard
 ///
 /// Because step 1 listens to a *stream*, the gate reacts on its own. Log out
 /// from any dashboard and Firebase pushes a new value, the gate rebuilds, and
-/// the login page appears — no `Navigator` call anywhere. Same on login. That
+/// the landing page appears — no `Navigator` call anywhere. Same on login. That
 /// is the whole appeal of this pattern: sign-in state lives in one place.
+///
+/// One wrinkle comes from the landing page. Login and Register are *pushed* on
+/// top of this gate as routes, so when signing in succeeds the gate does
+/// rebuild into a dashboard — but underneath the login screen still covering
+/// it. That is why those two pages pop themselves once they succeed; see the
+/// note in `LoginPage._submit`.
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -59,7 +65,7 @@ class _AuthGateState extends State<AuthGate> {
 
         final firebaseUser = snapshot.data;
         if (firebaseUser == null) {
-          return const LoginPage();
+          return const LandingPage();
         }
 
         // Signed in, but Firebase Auth doesn't know the role — that lives in
