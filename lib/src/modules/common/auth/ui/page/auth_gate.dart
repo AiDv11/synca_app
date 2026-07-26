@@ -155,7 +155,10 @@ class _RoleRouterState extends State<_RoleRouter> {
         // blank screen at runtime.
         switch (user.role) {
           case UserRole.member:
-            return const MemberDashboard();
+            // The member screens need the uid, name and group id, so the
+            // profile we just loaded is handed straight down instead of every
+            // screen fetching it again.
+            return MemberDashboard(user: user);
           case UserRole.leader:
             return const LeaderDashboard();
           case UserRole.coordinator:
