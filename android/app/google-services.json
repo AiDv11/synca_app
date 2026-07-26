@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "51705683787",
+    "project_id": "synca-app-a7809",
+    "storage_bucket": "synca-app-a7809.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:51705683787:android:a39ab0df2ef031f6c692ce",
+        "android_client_info": {
+          "package_name": "com.example.synca_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCYQd8NN1KOw7dIygh8wmoseGA8bbXv3YA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
