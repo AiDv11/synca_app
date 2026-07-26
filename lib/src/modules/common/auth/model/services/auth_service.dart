@@ -32,6 +32,18 @@ class AuthService {
   CollectionReference<Map<String, dynamic>> get _users =>
       _firestore.collection('users');
 
+  /// Fires every time the user signs in or out, and once on startup with the
+  /// session restored from disk.
+  ///
+  /// A `Stream` is "many values over time", where a `Future` is "one value,
+  /// once". Sign-in state is a stream because it keeps changing while the app
+  /// runs. Widgets listen to this instead of asking "is anyone logged in?" —
+  /// they get told, so logging out anywhere updates the whole app at once.
+  ///
+  /// This is the raw Firebase `User` (credentials only, no role). Pair it with
+  /// [getCurrentUser] when you need the Synca profile.
+  Stream<User?> authStateChanges() => _auth.authStateChanges();
+
   /// Creates a new account, in two steps.
   ///
   /// 1. Firebase Auth creates the credentials and returns a `uid`.
