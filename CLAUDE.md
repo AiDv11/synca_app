@@ -47,6 +47,174 @@ current user's role in mind.
 Defined in `lib/src/core/theme/app_colors.dart`. Use those constants — do not hardcode hex
 values in widgets.
 
+## Wireframes (from approved proposal, section 3.3.2)
+
+These four screens were signed off in the proposal. **All UI must match them** — the same
+sections, in the same order, with the same copy and controls. Text in quotes is the exact
+wording. A deviation is a change to the approved proposal, not just a code change, so
+raise it before building it.
+
+Anything not specified here (spacing, corner radius, icon choice) is free, as long as it
+uses the brand colours above.
+
+### Figure 1 — Landing page
+
+Public screen, shown before sign-in.
+
+```
+┌──────────────────────────────────┐
+│              Synca               │  title
+│                                  │
+│   Coordinate group projects,     │  headline
+│       without the chaos          │
+│                                  │
+│   <subtext: task ownership,      │
+│    progress tracking,            │
+│    deadline visibility>          │
+│                                  │
+│  ┌────────────────────────────┐  │
+│  │          Log In            │  │  filled
+│  └────────────────────────────┘  │
+│  ┌────────────────────────────┐  │
+│  │          Register          │  │  outlined
+│  └────────────────────────────┘  │
+│                                  │
+│  ┌────────────────────────────┐  │
+│  │ For Group Members          │  │
+│  │ claim tasks, upload proof, │  │
+│  │ track your contribution    │  │
+│  ├────────────────────────────┤  │
+│  │ For Group Leaders          │  │
+│  │ live dashboard, at-risk    │  │
+│  │ task alerts, reassignment  │  │
+│  ├────────────────────────────┤  │
+│  │ For Module Coordinators    │  │
+│  │ high-level submission      │  │
+│  │ health across all groups   │  │
+│  └────────────────────────────┘  │
+└──────────────────────────────────┘
+```
+
+- Title: "Synca"
+- Headline: "Coordinate group projects, without the chaos"
+- Subtext covers task ownership, progress tracking and deadline visibility
+- "Log In" (filled) above "Register" (outlined) — that order
+- Three role cards, in the order Members → Leaders → Coordinators
+
+### Figure 2 — Group Member
+
+```
+┌──────────────────────────────────┐
+│ My Tasks                         │  header
+├──────────────────────────────────┤
+│ ┌──────────────────────────────┐ │
+│ │ My contribution this project │ │
+│ │ ████████████░░░░░░░░░░░░░░░░ │ │  progress bar
+│ │ X of Y tasks completed       │ │
+│ │                View Timeline │ │
+│ └──────────────────────────────┘ │
+│                                  │
+│ My Claimed Tasks                 │  section heading
+│ ┌──────────────────────────────┐ │
+│ │ Task title        [ chip ]   │ │
+│ │ due text                     │ │
+│ ├──────────────────────────────┤ │
+│ │ Task title        [ chip ]   │ │
+│ │ due text                     │ │
+│ └──────────────────────────────┘ │
+│                                  │
+│ ┌──────────────────────────────┐ │
+│ │       + Claim a Task         │ │
+│ └──────────────────────────────┘ │
+├──────────────────────────────────┤
+│  Tasks   Group  Timeline Profile │  bottom nav
+└──────────────────────────────────┘
+```
+
+- Header: "My Tasks"
+- Contribution card: "My contribution this project", progress bar,
+  "X of Y tasks completed" and a "View Timeline" link
+- Section heading: "My Claimed Tasks"
+- Each row: title, due text, status chip on the right
+- Button: "+ Claim a Task"
+- Bottom nav: Tasks, Group, Timeline, Profile
+
+### Figure 3 — Group Leader
+
+```
+┌──────────────────────────────────┐
+│ Team Dashboard                   │  header
+├──────────────────────────────────┤
+│ ┌────────┐ ┌────────┐ ┌────────┐ │
+│ │  68%   │ │   3    │ │   5    │ │  summary cards
+│ │progress│ │at risk │ │members │ │
+│ └────────┘ └────────┘ └────────┘ │
+│                                  │
+│ Task Overview                    │
+│ ┌──────────────────────────────┐ │
+│ │ Task title        [ chip ]   │ │
+│ │ owner - status detail        │ │
+│ ├──────────────────────────────┤ │
+│ │ Task title        [ chip ]   │ │  at-risk rows
+│ │ owner - status detail        │ │  emphasised
+│ └──────────────────────────────┘ │
+│                                  │
+│ ┌─────────────┐ ┌──────────────┐ │
+│ │Reassign Task│ │  + Add Task  │ │
+│ └─────────────┘ └──────────────┘ │
+├──────────────────────────────────┤
+│ Dashboard Tasks Members  Profile │  bottom nav
+└──────────────────────────────────┘
+```
+
+- Header: "Team Dashboard"
+- Three summary cards: overall progress %, at-risk task count, member count
+- Section heading: "Task Overview"
+- Each row: title, "owner - status detail", status chip; at-risk rows are visually
+  emphasised (they must stand out from the rest of the list)
+- Buttons: "Reassign Task" and "+ Add Task"
+- Bottom nav: Dashboard, Tasks, Members, Profile
+
+### Figure 4 — Module Coordinator
+
+Read-only. See the hard rule under **Roles** — this screen shows health signals only.
+
+```
+┌──────────────────────────────────┐
+│ Module Overview                  │  header
+├──────────────────────────────────┤
+│ Sorted by risk level    N groups │
+│                                  │
+│ ( On Track )( At Risk )(Critical)│  filter chips
+│                                  │
+│ ┌──────────────────────────────┐ │
+│ │ Group name          On Track │ │
+│ │ high-level reason            │ │
+│ ├──────────────────────────────┤ │
+│ │ Group name          At Risk  │ │
+│ │ 3 tasks overdue              │ │
+│ ├──────────────────────────────┤ │
+│ │ Group name          Critical │ │
+│ │ no activity for 8 days       │ │
+│ └──────────────────────────────┘ │
+│                                  │
+│ Tap a group to view progress %   │
+│ and overdue count only.          │
+├──────────────────────────────────┤
+│    Overview   Flagged   Profile  │  bottom nav
+└──────────────────────────────────┘
+```
+
+- Header: "Module Overview"
+- Sorted by risk level; group count shown
+- Filter chips: On Track / At Risk / Critical
+- Each row: group name, high-level reason (overdue count or inactivity), status label
+- Note on screen: "Tap a group to view progress % and overdue count only"
+- Bottom nav: Overview, Flagged, Profile
+
+The "reason" text is the boundary in practice: "3 tasks overdue" is a health signal and is
+allowed; "Literature Review is overdue" names private group content and is not.
+
 ## Project structure
 
 ```
