@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/core/theme/app_colors.dart';
@@ -192,12 +193,9 @@ class _MyTasksPageState extends State<MyTasksPage> {
     }
 
     if (_viewModel.errorMessage != null) {
-      return _EmptyState(
-        icon: Icons.cloud_off,
-        title: 'Something went wrong',
+      return _ErrorState(
         message: _viewModel.errorMessage!,
-        actionLabel: 'Retry',
-        onAction: _viewModel.retry,
+        onRetry: _viewModel.retry,
       );
     }
 
@@ -225,24 +223,133 @@ class _MyTasksPageState extends State<MyTasksPage> {
   }
 }
 
-/// Centred icon, headline and message, with an optional button.
+/// Shows the raw exception from the tasks stream.
+///
+/// Deliberately different from [_EmptyState]: the text is **selectable** and
+/// the whole thing **scrolls**, because a Firestore error can be several lines
+/// long and often ends in a URL you need to open. A centred, clipped,
+/// unselectable paragraph would hide exactly the part that matters.
+///
+/// This is developer-facing. Before the app is handed to students it should go
+/// back to a short, friendly message — see `_describeError` in the ViewModel.
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 8),
+          const Icon(Icons.bug_report_outlined, size: 44, color: Colors.red),
+          const SizedBox(height: 12),
+          const Text(
+            'Could not load your tasks',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.navy,
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade100),
+            ),
+            // SelectableText, not Text, so the message can be highlighted and
+            // copied — a Firestore index error hands you a long URL, and
+            // retyping one by hand is miserable.
+            child: SelectableText(
+              message,
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: AppColors.charcoal,
+                // Monospace keeps error codes and URLs readable and stops the
+                // renderer from making a URL look like prose.
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          FilledButton(
+            onPressed: onRetry,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.teal,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('Retry'),
+          ),
+          const SizedBox(height: 8),
+
+          OutlinedButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: message));
+              // `context` is used after an await, so the widget might be gone.
+              // StatelessWidget has no `mounted`, but its BuildContext does.
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Error copied'),
+                  backgroundColor: AppColors.teal,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy error'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.charcoal,
+              side: BorderSide(
+                color: AppColors.charcoal.withValues(alpha: 0.3),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+}
+
+/// Centred icon, headline and message.
 ///
 /// Empty states are worth building properly. A blank screen leaves a user
 /// wondering whether the app is broken or just has nothing to show.
+///
+/// It used to take an optional action button, which only the error branch
+/// ever used. [_ErrorState] handles that case now, so the parameters went with
+/// it — the analyzer flags optional parameters nobody passes.
 class _EmptyState extends StatelessWidget {
   const _EmptyState({
     required this.icon,
     required this.title,
     required this.message,
-    this.actionLabel,
-    this.onAction,
   });
 
   final IconData icon;
   final String title;
   final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -268,26 +375,6 @@ class _EmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 14, color: AppColors.charcoal),
             ),
-            // Only draw the button if the caller supplied one. Collection-if
-            // inside a children list is how widgets are made conditional.
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: onAction,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.teal,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 28,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(actionLabel!),
-              ),
-            ],
           ],
         ),
       ),

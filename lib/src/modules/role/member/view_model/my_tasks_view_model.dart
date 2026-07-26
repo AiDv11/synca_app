@@ -90,13 +90,41 @@ class MyTasksViewModel extends ChangeNotifier {
           },
           // Errors on a stream arrive through this callback, not as a thrown
           // exception — there is no `try` around a stream that can catch them.
-          onError: (Object error) {
+          //
+          // This used to replace the error with a friendly sentence about the
+          // connection, which was a guess: a permission-denied, a missing
+          // index and a dead network all looked identical on screen. It now
+          // reports what actually happened.
+          onError: (Object error, StackTrace stackTrace) {
             _isLoading = false;
-            _errorMessage =
-                "We couldn't load your tasks.\nCheck your connection.";
+            _errorMessage = _describeError(error);
+
+            // Also send it to the console, where `flutter run` shows it in
+            // full — including the stack trace, which never belongs on screen.
+            debugPrint('streamTasksForUser failed: $error');
+            debugPrintStack(stackTrace: stackTrace);
+
             notifyListeners();
           },
         );
+  }
+
+  /// Turns whatever the stream threw into text worth reading.
+  ///
+  /// [FirebaseException] carries a short machine-readable `code` — the part
+  /// that actually identifies the problem, like `permission-denied` or
+  /// `failed-precondition` — alongside a longer human message. Both are shown,
+  /// because the code tells you *which* problem and the message often carries
+  /// the fix (a missing Firestore index arrives with a URL that creates it).
+  ///
+  /// This is a debugging aid, not finished UI. Raw exception text should not
+  /// ship to students in the final build; swap it back for a friendly message
+  /// once the underlying cause is fixed.
+  String _describeError(Object error) {
+    if (error is FirebaseException) {
+      return '[${error.code}]\n\n${error.message ?? error.toString()}';
+    }
+    return error.toString();
   }
 
   /// Drops the failed stream and starts a fresh one, for the Retry button.
