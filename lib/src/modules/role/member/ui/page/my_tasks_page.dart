@@ -18,9 +18,24 @@ import 'package:synca_app/src/modules/role/member/view_model/my_tasks_view_model
 /// the wrong layer. (The `task_service` import below is for the `Task` *type*
 /// only; the widget never calls the service.)
 class MyTasksPage extends StatefulWidget {
-  const MyTasksPage({super.key, required this.user});
+  const MyTasksPage({
+    super.key,
+    required this.user,
+    required this.onViewTimeline,
+  });
 
   final AppUser user;
+
+  /// Called by the contribution card's "View Timeline" link.
+  ///
+  /// The page cannot switch tabs itself — the selected tab belongs to
+  /// `MemberDashboard`, which owns the bottom nav. So the shell passes a
+  /// callback down and this page just reports that the link was tapped.
+  ///
+  /// This is the standard Flutter pattern: **data flows down, events flow up.**
+  /// A child never reaches up into its parent's state; it is handed a function
+  /// to call, and the parent decides what that means.
+  final VoidCallback onViewTimeline;
 
   @override
   State<MyTasksPage> createState() => _MyTasksPageState();
@@ -98,49 +113,69 @@ class _MyTasksPageState extends State<MyTasksPage> {
     return ListenableBuilder(
       listenable: _viewModel,
       builder: (context, _) {
+        // The order here is fixed by Figure 2 in CLAUDE.md: contribution card,
+        // then the "My Claimed Tasks" heading, then the list, then the claim
+        // button underneath it.
         return Column(
           children: [
-            // Header stays put; only the list below it scrolls. Keeping the
-            // progress card and claim button always visible means the member
-            // can act without scrolling back up.
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-              child: Column(
-                children: [
-                  ProgressCard(
-                    completedCount: _viewModel.completedCount,
-                    totalCount: _viewModel.totalCount,
-                    progress: _viewModel.progress,
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              child: ProgressCard(
+                completedCount: _viewModel.completedCount,
+                totalCount: _viewModel.totalCount,
+                progress: _viewModel.progress,
+                onViewTimeline: widget.onViewTimeline,
+              ),
+            ),
+
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'My Claimed Tasks',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _claimTask,
-                      icon: const Icon(Icons.add_task),
-                      label: const Text('Claim a Task'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.teal,
-                        side: const BorderSide(color: AppColors.teal),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
 
             // Expanded gives the list all the leftover vertical space. A
             // ListView inside a Column without it throws an unbounded-height
             // error — one of the first Flutter errors everyone meets.
+            //
+            // Only this middle section scrolls. The card above and the button
+            // below stay put, so claiming a task never means scrolling to the
+            // bottom of a long list to find the button.
             Expanded(child: _buildTaskList()),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _claimTask,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.teal,
+                    side: const BorderSide(color: AppColors.teal),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  // The label carries its own "+" because that is the wording
+                  // in the wireframe. An icon widget would render a plus too,
+                  // but the approved copy is the literal string.
+                  child: const Text(
+                    '+ Claim a Task',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
           ],
         );
       },

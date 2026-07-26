@@ -36,6 +36,14 @@ class _MemberDashboardState extends State<MemberDashboard> {
     'Profile',
   ];
 
+  /// Named rather than a bare `2` at the call site below, so the link and the
+  /// nav item can't quietly disagree if the tab order ever changes.
+  static const int _timelineTabIndex = 2;
+
+  /// The one thing that changes which tab is on screen. Both the bottom nav and
+  /// the "View Timeline" link go through here.
+  void _showTab(int index) => setState(() => _selectedIndex = index);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -61,7 +69,14 @@ class _MemberDashboardState extends State<MemberDashboard> {
         child: IndexedStack(
           index: _selectedIndex,
           children: [
-            MyTasksPage(user: widget.user),
+            MyTasksPage(
+              user: widget.user,
+              // The Tasks page can't change tabs — `_selectedIndex` lives here.
+              // So it gets handed this function and calls it when the member
+              // taps "View Timeline". Events flow up, and the shell stays the
+              // only thing that decides which tab is showing.
+              onViewTimeline: () => _showTab(_timelineTabIndex),
+            ),
             const _ComingSoon(
               icon: Icons.groups_outlined,
               title: 'My Group',
@@ -80,10 +95,10 @@ class _MemberDashboardState extends State<MemberDashboard> {
 
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        // setState is what makes the tap visible: it updates the field and
-        // tells Flutter to rebuild, which moves both the IndexedStack and the
-        // highlighted icon.
-        onTap: (index) => setState(() => _selectedIndex = index),
+        // _showTab calls setState, which is what makes the tap visible: it
+        // updates the field and tells Flutter to rebuild, moving both the
+        // IndexedStack and the highlighted icon.
+        onTap: _showTab,
         // With four or more items the default behaviour hides the unselected
         // labels and shifts the icons around. `fixed` keeps all four labels on
         // screen and stops the row from dancing when you tap.

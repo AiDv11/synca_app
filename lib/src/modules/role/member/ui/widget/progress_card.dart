@@ -13,6 +13,7 @@ class ProgressCard extends StatelessWidget {
     required this.completedCount,
     required this.totalCount,
     required this.progress,
+    required this.onViewTimeline,
   });
 
   final int completedCount;
@@ -21,6 +22,10 @@ class ProgressCard extends StatelessWidget {
   /// 0.0 to 1.0. Passed in rather than computed here so the ViewModel stays the
   /// single place that decides what "progress" means.
   final double progress;
+
+  /// Tapping "View Timeline". The card reports the tap and nothing more — it
+  /// has no idea the app has tabs.
+  final VoidCallback onViewTimeline;
 
   @override
   Widget build(BuildContext context) {
@@ -42,12 +47,16 @@ class ProgressCard extends StatelessWidget {
             // Pushes the two children to opposite ends of the row.
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'My contribution',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+              // Exact wording from Figure 2 in CLAUDE.md. Flexible so a long
+              // title wraps instead of colliding with the percentage.
+              const Flexible(
+                child: Text(
+                  'My contribution this project',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               Text(
@@ -60,17 +69,10 @@ class ProgressCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            // Dart picks the plural at build time. "1 tasks completed" is the
-            // kind of detail that makes an app feel unfinished.
-            totalCount == 1
-                ? '$completedCount of 1 task completed'
-                : '$completedCount of $totalCount tasks completed',
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-          ),
           const SizedBox(height: 14),
 
+          // The bar sits above the count, per the wireframe.
+          //
           // ClipRRect rounds the ends of the bar. LinearProgressIndicator draws
           // square corners of its own; clipping is how you round them.
           ClipRRect(
@@ -83,6 +85,43 @@ class ProgressCard extends StatelessWidget {
               // is the adapter for "this one colour, never changing".
               valueColor: const AlwaysStoppedAnimation<Color>(AppColors.teal),
             ),
+          ),
+          const SizedBox(height: 12),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  // Dart picks the plural at build time. "1 tasks completed" is
+                  // the kind of detail that makes an app feel unfinished.
+                  totalCount == 1
+                      ? '$completedCount of 1 task completed'
+                      : '$completedCount of $totalCount tasks completed',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // A bare GestureDetector would work but gives no feedback and no
+              // sensible tap target. InkWell adds the ripple, and the padding
+              // makes the link comfortably tappable rather than a 13px sliver.
+              InkWell(
+                onTap: onViewTimeline,
+                borderRadius: BorderRadius.circular(6),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Text(
+                    'View Timeline',
+                    style: TextStyle(
+                      color: AppColors.skyBlue,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
