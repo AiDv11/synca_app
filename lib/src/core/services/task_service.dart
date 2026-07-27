@@ -21,6 +21,8 @@ class Task {
     required this.deadline,
     required this.createdAt,
     required this.lastUpdatedAt,
+    this.claimedAt,
+    this.completedAt,
     this.proofUrl,
   });
 
@@ -60,6 +62,23 @@ class Task {
   /// Touched by every write, so "who did what, when" can be reconstructed and
   /// so a group's activity can be judged as fresh or stale.
   final DateTime lastUpdatedAt;
+
+  /// When a member took this task, or null if nobody has yet.
+  ///
+  /// Nullable, unlike [createdAt] and [lastUpdatedAt], for two reasons. An
+  /// unclaimed task genuinely has no claim time — null is the honest value, not
+  /// a placeholder. And every task document written before this field existed
+  /// simply won't have it, so [fromMap] has to cope with it being absent.
+  ///
+  /// Unlike [lastUpdatedAt], this is written **once** and never overwritten, so
+  /// it survives later status changes. That is what makes it usable as history.
+  final DateTime? claimedAt;
+
+  /// When the task reached [TaskStatus.completed], or null if it hasn't.
+  ///
+  /// Note this is only ever *set*, never cleared: moving a completed task back
+  /// to in-progress leaves the old value behind. See [TaskService.updateStatus].
+  final DateTime? completedAt;
 
   /// Link to the uploaded proof of work, or null if none has been attached.
   ///
@@ -103,9 +122,19 @@ class Task {
       'deadline': Timestamp.fromDate(deadline),
       'createdAt': Timestamp.fromDate(createdAt),
       'lastUpdatedAt': Timestamp.fromDate(lastUpdatedAt),
+      // Null stays null rather than being dropped, so the field exists on the
+      // document and is visible in the Firebase console. `fromMap` treats a
+      // null value and a missing key identically, so either would read back the
+      // same — an explicit null is just easier to see when debugging.
+      'claimedAt': _toTimestamp(claimedAt),
+      'completedAt': _toTimestamp(completedAt),
       'proofUrl': proofUrl,
     };
   }
+
+  /// Firestore's date type, or null. Keeps the null check out of [toMap].
+  static Timestamp? _toTimestamp(DateTime? value) =>
+      value == null ? null : Timestamp.fromDate(value);
 
   /// Builds a [Task] from a Firestore document.
   ///
@@ -128,6 +157,11 @@ class Task {
       deadline: _readDate(map['deadline']),
       createdAt: _readDate(map['createdAt']),
       lastUpdatedAt: _readDate(map['lastUpdatedAt']),
+      // These two use the *optional* reader: a document written before these
+      // fields existed has no key at all, and that must parse as null rather
+      // than falling back to the epoch the way a required date does.
+      claimedAt: _readOptionalDate(map['claimedAt']),
+      completedAt: _readOptionalDate(map['completedAt']),
       // No `?? ''` here — null is the meaningful "no proof uploaded" value.
       proofUrl: map['proofUrl'] as String?,
     );
@@ -146,6 +180,18 @@ class Task {
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
     return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  /// Same as [_readDate], but "not there" means null instead of the epoch.
+  ///
+  /// Use this for dates that are genuinely optional. It also covers the moment
+  /// straight after a write with `FieldValue.serverTimestamp()`: Firestore
+  /// fires a local snapshot with the field still null before the server's value
+  /// arrives, and null is the correct reading of "the server hasn't said yet".
+  static DateTime? _readOptionalDate(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
   }
 
   @override
@@ -206,13 +252,8 @@ class TaskService {
     String ownerUid = Task.unassigned,
     String ownerName = '',
   }) async {
-    // One timestamp for both fields, so a brand new task reads as "created and
-    // last updated at the same instant" — which is exactly what happened.
-    //
-    // This is the device's clock. `FieldValue.serverTimestamp()` would use
-    // Firebase's clock and be immune to a wrong phone clock, but it writes null
-    // first and fills in a moment later, which every reader then has to handle.
-    // Not worth the complexity here.
+    // The device's clock, used only for the object handed back to the caller —
+    // see the note on the write below.
     final now = DateTime.now();
 
     // `.doc()` with no argument generates an id locally, without a round trip,
@@ -233,8 +274,29 @@ class TaskService {
       proofUrl: null,
     );
 
-    await ref.set(task.toMap());
+    // The two timestamps are overridden on the way out with
+    // `FieldValue.serverTimestamp()`, a sentinel meaning "fill this in with
+    // your clock when the write lands". Firebase's clock, not the phone's, so a
+    // device with the wrong time can't write a task that sorts into last week.
+    //
+    // `...task.toMap()` spreads every field, then the two keys after it replace
+    // what the spread produced. Order matters — a later key wins.
+    //
+    // The cost is that these fields are briefly null: Firestore fires a local
+    // snapshot immediately, before the server has resolved the sentinel.
+    // `_readOptionalDate` handles that for the nullable fields, and `_readDate`
+    // falls back to the epoch for these two until the real value arrives a
+    // moment later.
+    await ref.set({
+      ...task.toMap(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'lastUpdatedAt': FieldValue.serverTimestamp(),
+    });
 
+    // The returned Task carries the *device* time, because the server's value
+    // isn't known until the write completes and comes back down the stream. It
+    // is a local echo for the caller's convenience, accurate to within the
+    // clock difference. The document in Firestore is the authority.
     return task;
   }
 
@@ -280,7 +342,11 @@ class TaskService {
       transaction.update(ref, {
         'ownerUid': uid,
         'ownerName': name.trim(),
-        'lastUpdatedAt': Timestamp.fromDate(DateTime.now()),
+        // Written once, here, and never touched again — which is what makes it
+        // survivable history. `lastUpdatedAt` will be overwritten by the next
+        // status change; this won't.
+        'claimedAt': FieldValue.serverTimestamp(),
+        'lastUpdatedAt': FieldValue.serverTimestamp(),
       });
     });
   }
@@ -305,7 +371,16 @@ class TaskService {
   }) {
     return _tasks.doc(taskId).update({
       'status': status.name,
-      'lastUpdatedAt': Timestamp.fromDate(DateTime.now()),
+      'lastUpdatedAt': FieldValue.serverTimestamp(),
+      // Stamped only on the transition into the done state. A collection-if,
+      // so on any other status the key is absent from the map entirely and
+      // Firestore leaves whatever is already on the document alone.
+      //
+      // Consequence worth knowing: this only ever *sets*. Moving a completed
+      // task back to in-progress does not clear `completedAt`, so a reopened
+      // task keeps the date it was first finished. Read it together with
+      // `status`, never on its own.
+      if (status.isDone) 'completedAt': FieldValue.serverTimestamp(),
       'proofUrl': ?proofUrl,
     });
   }
