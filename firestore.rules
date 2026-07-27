@@ -1,0 +1,334 @@
+rules_version = '2';
+
+// =============================================================================
+// Synca — Cloud Firestore security rules
+// CT124-3-2-MAE, Group 17, APU
+//
+// These rules are the *only* real enforcement in the app. Everything the
+// Flutter client does — hiding a button, filtering a list, checking a role in a
+// ViewModel — is a convenience for the user, not a security control. A client
+// is just code on someone else's phone; it can be modified, and the Firestore
+// SDK can be called directly with any request the attacker likes. If a rule
+// isn't written here, it isn't enforced.
+//
+// The model throughout is "deny by default": Firestore refuses everything
+// unless a rule explicitly allows it, so every `allow` below is a deliberate
+// hole opened for one specific operation.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    // Is there a signed-in Firebase Auth user behind this request?
+    //
+    // `request.auth` is null for anonymous callers and is populated by Firebase
+    // itself from a verified ID token — the client cannot forge it. Every rule
+    // in this file starts with this check, which is what satisfies the
+    // requirement that nobody unauthenticated can read or write anything.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // The signed-in user's own profile document.
+    //
+    // Role and group membership live in Firestore, not in the auth token, so
+    // the rules have to fetch them. `get()` costs one document read per
+    // evaluation (Firestore caches identical reads within a single request) and
+    // there is a hard limit of 10 such calls per rule evaluation. This file
+    // stays well inside that.
+    //
+    // If the document does not exist, `get()` returns null and reading `.data`
+    // raises an error, which Firestore treats as a denied request. That is the
+    // desired behaviour: an account with no profile can do nothing.
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // The group the caller belongs to, or '' if they have not joined one.
+    function myGroupId() {
+      return myProfile().groupId;
+    }
+
+    // Does the caller belong to this specific group?
+    //
+    // The `!= ''` test is the important half. A user with no group has
+    // groupId '', and so does every other user who hasn't joined one. Without
+    // this check, "same group" would be true for all of them at once and they
+    // could read each other's data. Empty is treated as "no group", never as a
+    // group that can be matched.
+    function isInGroup(groupId) {
+      return groupId is string
+          && groupId != ''
+          && myGroupId() == groupId;
+    }
+
+    // Which fields this write is actually changing.
+    //
+    // `diff().affectedKeys()` compares the incoming document with the stored
+    // one and returns only the keys whose values differ. Combined with
+    // `hasOnly([...])` it is how a rule says "you may touch these fields and
+    // nothing else" — the client can send the whole document as long as the
+    // protected fields come back unchanged.
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // -------------------------------------------------------------------------
+    // /users/{userId}
+    // -------------------------------------------------------------------------
+    match /users/{userId} {
+
+      // READ — your own profile, or a profile in your group.
+      //
+      // Two separate needs. The app loads the signed-in user's own document on
+      // every launch to find their role and group, which is the first clause.
+      // The second lets group mates see each other, which the leader's member
+      // list and the "owner" name on a task both depend on.
+      //
+      // Note what this does NOT allow: browsing the whole user base. A user
+      // outside your group is invisible, so the collection cannot be harvested
+      // for names and email addresses.
+      //
+      // On queries: Firestore rules are filters' opposite — a query is rejected
+      // unless its constraints *guarantee* every possible result passes the
+      // rule. So `users.where('groupId', isEqualTo: myGroup)` succeeds, while
+      // an unfiltered `users.get()` is refused outright rather than silently
+      // trimmed.
+      allow read: if isSignedIn()
+                  && (
+                       request.auth.uid == userId
+                       || isInGroup(resource.data.groupId)
+                     );
+
+      // CREATE — only your own profile, at registration.
+      //
+      // Not in the original brief, but registration is a create: AuthService
+      // writes users/{uid} straight after Firebase Auth returns a uid. Without
+      // this clause, sign-up would succeed in Auth and then fail in Firestore,
+      // leaving an account with no profile.
+      //
+      // The document id is pinned to the caller's uid, so nobody can fabricate
+      // a profile for someone else. The uid field must agree with the id, or
+      // the two could drift apart and every lookup keyed on one would disagree
+      // with the other.
+      //
+      // A new user must start with no group. Letting them pick a groupId here
+      // would be a way to join a group without going through the join flow.
+      allow create: if isSignedIn()
+                    && request.auth.uid == userId
+                    && request.resource.data.uid == userId
+                    && request.resource.data.groupId == '';
+
+      // UPDATE — your own profile only, and never your role.
+      //
+      // This is the privilege-escalation guard, and the most important rule in
+      // the file. Role decides what the whole app shows and what these rules
+      // permit. If a user could write `role: 'coordinator'` to their own
+      // document, they would grant themselves cross-group visibility with a
+      // single request, from any HTTP client, without touching the app.
+      // Requiring the incoming role to equal the stored one makes the field
+      // effectively immutable from the client; changing it needs the Firebase
+      // console or an admin-SDK backend, neither of which is bound by rules.
+      //
+      // uid is frozen for the same reason it is checked on create: it must keep
+      // matching the document id.
+      //
+      // What is left changeable: name, email and groupId. groupId has to be
+      // writable — that is exactly how joining and leaving a group works in the
+      // Group tab.
+      allow update: if isSignedIn()
+                    && request.auth.uid == userId
+                    && request.resource.data.role == resource.data.role
+                    && request.resource.data.uid == resource.data.uid;
+
+      // DELETE — never, from any client.
+      //
+      // Tasks store ownerUid and ownerName. Deleting a profile would leave
+      // those pointing at nothing and quietly destroy the record of who did
+      // what, which is the evidence this app exists to keep. Account removal is
+      // an administrative action, not a user-facing one.
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // /tasks/{taskId}
+    // -------------------------------------------------------------------------
+    match /tasks/{taskId} {
+
+      // READ — only members of the task's own group.
+      //
+      // This single line is what enforces the project's hard privacy rule at
+      // the database level rather than by convention. A Module Coordinator has
+      // no groupId, so this evaluates false for every task: they cannot read a
+      // title, a description or a proof link even by calling Firestore
+      // directly, which is precisely the guarantee the proposal makes. Up to
+      // now that rule lived only in ViewModel code, where it was a promise
+      // rather than a control.
+      //
+      // It equally stops one student group reading another group's coursework.
+      //
+      // IMPORTANT — this breaks one existing query. See the note at the bottom
+      // of this file before deploying.
+      allow read: if isSignedIn() && isInGroup(resource.data.groupId);
+
+      // CREATE — group leaders, into their own group.
+      //
+      // Beyond the brief, which only covers members, but without it nobody can
+      // create a task at all and the leader's "+ Add Task" button would fail.
+      // Restricted to the leader role because assigning work is a leader
+      // responsibility in the proposal, and pinned to the leader's own group so
+      // a leader cannot plant tasks in someone else's project.
+      //
+      // A new task must start unowned or owned by a real person; ownerUid is
+      // left to the application. The status is forced to 'notStarted' so a task
+      // cannot be created already complete, which would corrupt every progress
+      // figure the coordinator sees.
+      allow create: if isSignedIn()
+                    && myProfile().role == 'leader'
+                    && isInGroup(request.resource.data.groupId)
+                    && request.resource.data.status == 'notStarted';
+
+      // UPDATE — three narrow, mutually exclusive cases.
+      //
+      // Everything must be in the caller's group first; the specific case is
+      // then checked below. Splitting it this way means a member can never
+      // reach a leader's powers by crafting a request, because each branch
+      // names the exact fields it permits.
+      allow update: if isSignedIn()
+                    && isInGroup(resource.data.groupId)
+                    && isInGroup(request.resource.data.groupId)
+                    && (isClaimingTask() || isOwnerUpdatingOwnTask() || isLeaderReassigning());
+
+      // Requiring the group on both the stored and incoming document, as above,
+      // is what stops a task being moved between groups. Change groupId and the
+      // second check fails, because the caller cannot be in both groups at
+      // once. That satisfies "cannot change groupId" without a separate clause.
+
+      // Case 1 — a member claims an unclaimed task.
+      //
+      // The task must currently have no owner, and the new owner must be the
+      // caller. Together those stop two things: taking work off someone who
+      // already claimed it, and claiming a task on another person's behalf.
+      //
+      // The field list mirrors exactly what TaskService.claimTask writes.
+      // Anything else in the same request — a changed title, a status jumped
+      // straight to completed — makes hasOnly false and the whole write is
+      // rejected. Note this cannot be bypassed by sending two requests either,
+      // since each is judged on its own.
+      function isClaimingTask() {
+        return resource.data.ownerUid == ''
+            && request.resource.data.ownerUid == request.auth.uid
+            && changedKeys().hasOnly(['ownerUid', 'ownerName', 'claimedAt', 'lastUpdatedAt']);
+      }
+
+      // Case 2 — the owner updates their own task.
+      //
+      // Only the fields the brief allows: status and proofUrl, plus the two
+      // timestamps the service maintains alongside them. lastUpdatedAt is
+      // written on every change; completedAt only when a task is finished, and
+      // it travels in the same request as the status change that finishes it.
+      //
+      // A member therefore cannot rewrite the title or the deadline of a task
+      // they own — those are the leader's to set, and letting an owner move a
+      // deadline would defeat the at-risk tracking entirely.
+      //
+      // ownerUid is absent from the list, so a member cannot hand a task to
+      // somebody else. Reassignment is a leader action, below.
+      function isOwnerUpdatingOwnTask() {
+        return resource.data.ownerUid == request.auth.uid
+            && changedKeys().hasOnly(['status', 'proofUrl', 'lastUpdatedAt', 'completedAt']);
+      }
+
+      // Case 3 — a leader reassigns a task.
+      //
+      // Also beyond the brief, and included because TaskService.reassignTask
+      // already exists and the proposal lists reassignment as a leader power.
+      // Unlike a claim, this deliberately allows overwriting an existing owner:
+      // that is the whole point of a leader rebalancing the workload.
+      //
+      // Delete this function and its call above if you want a strictly
+      // member-only rules file.
+      function isLeaderReassigning() {
+        return myProfile().role == 'leader'
+            && changedKeys().hasOnly(['ownerUid', 'ownerName', 'lastUpdatedAt']);
+      }
+
+      // DELETE — never, from any client.
+      //
+      // Required by the brief for members, and applied to everyone on purpose.
+      // Synca's stated value is keeping evidence of who actually did what. A
+      // deletable task is a deletable record: a member could quietly remove
+      // work they never finished right before marking, and nothing would show
+      // it had ever existed. Cancelled work should be represented by a status,
+      // not by an absence.
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Everything else
+    // -------------------------------------------------------------------------
+
+    // Explicit catch-all denial.
+    //
+    // Firestore already denies unmatched paths, so this changes no behaviour —
+    // it is here to state the intent. Any collection added later (groups,
+    // activity logs, coordinator summaries) is locked until somebody writes a
+    // rule for it on purpose, rather than inheriting access by accident.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+// =============================================================================
+// BEFORE YOU DEPLOY — two things will break
+// =============================================================================
+//
+// 1. streamTasksForUser() will be rejected.
+//
+//    Firestore rules are not filters. For a query, Firestore does not read the
+//    documents and drop the ones that fail — it inspects the query itself and
+//    refuses the whole thing unless the constraints prove every possible result
+//    would pass. The read rule above requires groupId to match, and
+//
+//        tasks.where('ownerUid', isEqualTo: uid).orderBy('deadline')
+//
+//    never mentions groupId, so Firestore cannot prove it and returns
+//    permission-denied. This is the query behind My Tasks and the Timeline, so
+//    both go straight to their error state.
+//
+//    streamTasksForGroup() is fine — it already filters on groupId.
+//
+//    Two ways to fix, both outside this file:
+//      (a) Add the group to the query:
+//              .where('groupId', isEqualTo: groupId)
+//              .where('ownerUid', isEqualTo: uid)
+//              .orderBy('deadline')
+//          This needs a new composite index and a groupId argument passed into
+//          streamTasksForUser. It keeps the rule exactly as the brief specifies.
+//      (b) Widen the read rule to allow a task you own regardless of group:
+//              allow read: if isSignedIn() && (
+//                  resource.data.ownerUid == request.auth.uid
+//                  || isInGroup(resource.data.groupId));
+//          No client change, and it means work you did stays visible after you
+//          leave a group. It is a deliberate loosening of the brief, so decide
+//          it on purpose rather than drifting into it.
+//
+// 2. The Module Coordinator can read nothing at all.
+//
+//    That is correct and intended — it is the privacy rule enforced properly.
+//    But it also means the coordinator dashboard has no data source. Aggregate
+//    health figures cannot be computed on the client from tasks it is forbidden
+//    to read. The standard answer is a separate collection of pre-computed
+//    summaries, e.g. /groupHealth/{groupId} holding only counts, written by a
+//    trusted Cloud Function and readable by coordinators. That collection does
+//    not exist yet and is denied by the catch-all above.
+//
+// Also worth knowing: a task whose groupId is '' is readable by nobody, since
+// isInGroup() rejects the empty string. Any such orphan documents in the
+// database will simply vanish from the app once these rules are live.
+// =============================================================================
