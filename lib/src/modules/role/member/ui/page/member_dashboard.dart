@@ -4,6 +4,7 @@ import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 import 'package:synca_app/src/modules/common/auth/model/services/auth_service.dart';
+import 'package:synca_app/src/modules/role/member/ui/page/group_page.dart';
 import 'package:synca_app/src/modules/role/member/ui/page/my_tasks_page.dart';
 import 'package:synca_app/src/modules/role/member/ui/page/timeline_page.dart';
 
@@ -28,8 +29,53 @@ class MemberDashboard extends StatefulWidget {
 }
 
 class _MemberDashboardState extends State<MemberDashboard> {
-  /// Which tab is showing. The one piece of state this shell has.
+  /// Which tab is showing.
   int _selectedIndex = 0;
+
+  /// The signed-in member, as every tab below sees them.
+  ///
+  /// Held in State rather than read straight from `widget.user`, and this is
+  /// the fix for a specific bug. `AuthGate` loads the profile **once** with a
+  /// `FutureBuilder` over `getCurrentUser()` — a single Firestore `.get()`,
+  /// not a stream. `AuthService` streams only Firebase Auth's credentials,
+  /// which don't include `groupId`.
+  ///
+  /// So joining a group writes the new value to Firestore, and the `AppUser`
+  /// handed down from the gate carries on saying `groupId: ''` for the rest of
+  /// the session. The claim sheet reads `user.hasGroup` to decide whether to
+  /// query at all, so it would keep insisting the member has no group until the
+  /// app was restarted.
+  ///
+  /// Keeping the user here lets the Group tab report a change up and every
+  /// other tab rebuild with the new value immediately.
+  ///
+  /// The proper fix is for the profile to be a stream, so any change to
+  /// `/users/{uid}` — from any device — flows down on its own. That belongs in
+  /// `AuthService` and `AuthGate`, outside this module.
+  late AppUser _user;
+
+  @override
+  void initState() {
+    super.initState();
+    _user = widget.user;
+  }
+
+  /// Rebuilds the shell with the member's new group.
+  ///
+  /// [AppUser] is immutable and has no `copyWith`, so a fresh one is built by
+  /// hand with every other field carried across. Adding `copyWith` to
+  /// `AppUser` would be tidier, but that file is in the auth module.
+  void _handleGroupChanged(String groupId) {
+    setState(() {
+      _user = AppUser(
+        uid: _user.uid,
+        email: _user.email,
+        name: _user.name,
+        role: _user.role,
+        groupId: groupId,
+      );
+    });
+  }
 
   static const List<String> _titles = [
     'My Tasks',
@@ -125,22 +171,19 @@ class _MemberDashboardState extends State<MemberDashboard> {
         child: IndexedStack(
           index: _selectedIndex,
           children: [
+            // Every tab is handed `_user`, not `widget.user`, so a group change
+            // reaches all of them on the next rebuild.
             MyTasksPage(
-              user: widget.user,
+              user: _user,
               // The Tasks page can't change tabs — `_selectedIndex` lives here.
               // So it gets handed this function and calls it when the member
               // taps "View Timeline". Events flow up, and the shell stays the
               // only thing that decides which tab is showing.
               onViewTimeline: () => _showTab(_timelineTabIndex),
             ),
-            const _ComingSoon(
-              icon: Icons.groups_outlined,
-              title: 'My Group',
-              message:
-                  'Your group members and their workload will appear here.',
-            ),
-            TimelinePage(user: widget.user),
-            _ProfileTab(user: widget.user),
+            GroupPage(user: _user, onGroupChanged: _handleGroupChanged),
+            TimelinePage(user: _user),
+            _ProfileTab(user: _user),
           ],
         ),
       ),
@@ -350,49 +393,6 @@ class _InfoTile extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Placeholder for the two tabs that aren't built yet.
-class _ComingSoon extends StatelessWidget {
-  const _ComingSoon({
-    required this.icon,
-    required this.title,
-    required this.message,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 56, color: AppColors.skyBlue),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                color: AppColors.navy,
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, color: AppColors.charcoal),
-            ),
-          ],
-        ),
       ),
     );
   }
