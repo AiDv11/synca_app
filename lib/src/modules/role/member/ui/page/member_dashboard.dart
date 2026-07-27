@@ -5,6 +5,7 @@ import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 import 'package:synca_app/src/modules/common/auth/model/services/auth_service.dart';
 import 'package:synca_app/src/modules/role/member/ui/page/my_tasks_page.dart';
+import 'package:synca_app/src/modules/role/member/ui/page/timeline_page.dart';
 
 /// Home shell for a Group Member.
 ///
@@ -138,16 +139,14 @@ class _MemberDashboardState extends State<MemberDashboard> {
               message:
                   'Your group members and their workload will appear here.',
             ),
-            const _ComingSoon(
-              icon: Icons.timeline_outlined,
-              title: 'Timeline',
-              message: 'Your contribution history will appear here.',
-            ),
+            TimelinePage(user: widget.user),
             _ProfileTab(user: widget.user),
           ],
         ),
       ),
 
+      // TODO: remove before submission
+      //
       // TEMPORARY — debug only, delete with the block above.
       //
       // Only on the Tasks tab, since that is the list being debugged. Placed at
