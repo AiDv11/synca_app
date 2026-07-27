@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 import 'package:synca_app/src/modules/common/auth/model/services/auth_service.dart';
@@ -43,6 +44,60 @@ class _MemberDashboardState extends State<MemberDashboard> {
   /// The one thing that changes which tab is on screen. Both the bottom nav and
   /// the "View Timeline" link go through here.
   void _showTab(int index) => setState(() => _selectedIndex = index);
+
+  // ===========================================================================
+  // TEMPORARY — debug only. Delete this block and the FAB in `build` once the
+  // "my tasks don't appear" problem is solved.
+  //
+  // The point of writing through TaskService rather than the Firebase console
+  // is that the write and the read then share one code path. Same collection
+  // constant, same field names, same uid, same Timestamp conversion — so if a
+  // task created here shows up but a hand-made document doesn't, the fault is
+  // in the document, not the query.
+  // ===========================================================================
+
+  bool _isCreatingTestTask = false;
+
+  Future<void> _createTestTask() async {
+    setState(() => _isCreatingTestTask = true);
+
+    try {
+      final task = await TaskService().createTask(
+        groupId: 'group1',
+        title: 'Draft literature review',
+        description: 'Temporary task created by the debug button.',
+        // createTask always writes status notStarted, so there is no parameter
+        // for it — a brand new task has by definition not been started.
+        deadline: DateTime.now().add(const Duration(days: 7)),
+        // The signed-in uid, straight from the profile AuthGate loaded. This is
+        // the exact value streamTasksForUser filters on.
+        ownerUid: widget.user.uid,
+        ownerName: widget.user.name,
+      );
+
+      if (!mounted) return;
+      _showSnackBar('Created task ${task.id}', isError: false);
+      debugPrint('Test task written: id=${task.id} ownerUid=${task.ownerUid}');
+    } catch (error) {
+      if (!mounted) return;
+      // Show the real exception, same reasoning as the tasks list error panel:
+      // a generic message here would hide a permission-denied.
+      _showSnackBar('$error');
+      debugPrint('createTask failed: $error');
+    } finally {
+      if (mounted) setState(() => _isCreatingTestTask = false);
+    }
+  }
+
+  void _showSnackBar(String message, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : AppColors.teal,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +147,33 @@ class _MemberDashboardState extends State<MemberDashboard> {
           ],
         ),
       ),
+
+      // TEMPORARY — debug only, delete with the block above.
+      //
+      // Only on the Tasks tab, since that is the list being debugged. Placed at
+      // the top so it doesn't sit on top of the "+ Claim a Task" button at the
+      // bottom of the page.
+      floatingActionButton: _selectedIndex == 0
+          ? FloatingActionButton.extended(
+              // A null callback disables the button, which is what stops an
+              // impatient double-tap creating two tasks.
+              onPressed: _isCreatingTestTask ? null : _createTestTask,
+              backgroundColor: AppColors.teal,
+              foregroundColor: Colors.white,
+              icon: _isCreatingTestTask
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.bug_report_outlined),
+              label: const Text('Create test task'),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
 
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
