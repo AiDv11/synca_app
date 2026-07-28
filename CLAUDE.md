@@ -264,17 +264,27 @@ Verified journey:
 4. Move that task through its statuses to Completed
 5. Timeline renders the created / claimed / completed rows with correct relative times
 
-That journey was verified **before** `streamTasksForUser` gained its `groupId` filter
-(see below). The change is small, but the run above no longer matches `main` exactly —
-re-check the Tasks and Timeline tabs once the new index is built.
+**Re-verified against the deployed rules.** After `firestore.rules` went live and
+`streamTasksForUser` gained its `groupId` filter, the whole journey was run again in
+Chrome — Tasks, Timeline, Group tab, claim sheet and status changes all work under the
+live rules. Nothing here is pending re-checking.
 
-**Firestore indexes** on `/tasks`:
+**Firestore rules are DEPLOYED.** `firestore.rules` is no longer a draft; it is what the
+live database enforces. Change it and the app's behaviour changes, so treat any edit as
+a production change and re-test the member journey afterwards.
 
-| Fields (in order) | Used by | Exists? |
-| ------------------------------- | ---------------------- | ------------------- |
-| `groupId`+`ownerUid`+`deadline` | `streamTasksForUser`   | **No — must create** |
-| `groupId`+`deadline`            | `streamTasksForGroup`  | Yes |
-| `ownerUid`+`deadline`           | nothing — orphaned     | Yes, safe to delete |
+A consequence to remember: the Module Coordinator can now read nothing at all. That is
+the proposal's privacy rule working as intended, but it means the coordinator dashboard
+cannot compute anything client-side from `/tasks`. It will need a separate collection of
+pre-computed, non-identifying figures.
+
+**Firestore indexes** on `/tasks` — all three exist:
+
+| Fields (in order) | Used by |
+| ------------------------------- | ---------------------- |
+| `groupId`+`ownerUid`+`deadline` | `streamTasksForUser` |
+| `groupId`+`deadline`            | `streamTasksForGroup` |
+| `ownerUid`+`deadline`           | nothing — orphaned, safe to delete |
 
 All fields ascending. Equality-filtered fields must come before the `orderBy` field,
 which is why `deadline` is last.
@@ -283,15 +293,12 @@ which is why `deadline` is last.
 rules are not filters: a query is refused outright unless its constraints prove every
 possible result passes the rule. The `/tasks` read rule requires a group match, so a
 query that never names `groupId` returns `permission-denied` rather than an empty list.
-Until the new index exists, that query throws `failed-precondition` and both tabs show
-their error state.
+Any new query against `/tasks` must carry a `groupId` filter for the same reason.
 
 **Not done yet:**
 
 - **Group Leader** and **Module Coordinator** modules are still unbuilt — placeholder
   dashboards only.
-- `firestore.rules` is written and committed but **not deployed and not tested**. The
-  live database is still running whatever rules preceded it.
 
 ## Working notes
 
