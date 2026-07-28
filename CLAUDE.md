@@ -251,6 +251,33 @@ files land in that folder.
 
 Rule of thumb: if a widget file imports `cloud_firestore`, something is in the wrong layer.
 
+## Current status
+
+**Group Member module — built, run and verified end to end.** Tested in Chrome and on an
+Android Pixel 6 API 34 emulator.
+
+Verified journey:
+
+1. Register a new account
+2. Join a group by code from the Group tab
+3. Claim a task from the claim sheet
+4. Move that task through its statuses to Completed
+5. Timeline renders the created / claimed / completed rows with correct relative times
+
+**Firestore indexes.** Two composite indexes exist on `/tasks`:
+
+| Fields | Used by |
+| ------------------- | ---------------------- |
+| `ownerUid`+`deadline` | `streamTasksForUser` |
+| `groupId`+`deadline`  | `streamTasksForGroup` |
+
+**Not done yet:**
+
+- **Group Leader** and **Module Coordinator** modules are still unbuilt — placeholder
+  dashboards only.
+- `firestore.rules` is written and committed but **not deployed and not tested**. The
+  live database is still running whatever rules preceded it.
+
 ## Working notes
 
 - The developer is **new to Flutter**. Explain what new code does and why — especially
