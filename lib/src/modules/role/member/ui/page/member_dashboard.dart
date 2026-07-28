@@ -324,15 +324,6 @@ class _ProfileTabState extends State<_ProfileTab> {
         ),
         const SizedBox(height: 10),
 
-        // The circle above is tappable too. This row is the discoverable half —
-        // a tap target that says what it does, for anyone who doesn't think to
-        // press their own picture.
-        _ActionTile(
-          icon: Icons.face_outlined,
-          label: 'Change avatar',
-          onTap: _changeAvatar,
-        ),
-        const SizedBox(height: 10),
         _ActionTile(
           icon: Icons.lock_outline,
           label: 'Change password',
