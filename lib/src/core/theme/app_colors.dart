@@ -26,4 +26,16 @@ abstract final class AppColors {
 
   /// Body text and icons on light backgrounds. `#1F2937`
   static const Color charcoal = Color(0xFF1F2937);
+
+  /// Overdue work, error messages, destructive actions. `#DC2626`
+  ///
+  /// The one colour here that is not in the approved proposal's palette. It had
+  /// to be added: "late" has to read as a warning at a glance, and none of the
+  /// five brand colours says that — navy and charcoal are the ordinary text
+  /// colours, and teal and sky blue both read as positive.
+  ///
+  /// Named for its job rather than its hue, because that is the whole point of
+  /// it. Red in this app means "something is wrong"; anything using it
+  /// decoratively would blunt the one signal it carries.
+  static const Color danger = Color(0xFFDC2626);
 }
