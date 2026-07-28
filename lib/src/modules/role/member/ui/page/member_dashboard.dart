@@ -6,6 +6,7 @@ import 'package:synca_app/src/modules/common/auth/model/services/auth_service.da
 import 'package:synca_app/src/modules/role/member/ui/page/group_page.dart';
 import 'package:synca_app/src/modules/role/member/ui/page/my_tasks_page.dart';
 import 'package:synca_app/src/modules/role/member/ui/page/timeline_page.dart';
+import 'package:synca_app/src/modules/role/member/ui/widget/change_password_sheet.dart';
 
 /// Home shell for a Group Member.
 ///
@@ -183,6 +184,29 @@ class _ProfileTab extends StatelessWidget {
 
   final AppUser user;
 
+  /// Opens the change-password sheet and confirms if it succeeded.
+  ///
+  /// The sheet owns the whole interaction — fields, validation, errors and the
+  /// call itself — and returns true only when the password actually changed.
+  /// This method's only job is the confirmation message.
+  Future<void> _changePassword(BuildContext context) async {
+    // Captured before the await. `context` belongs to a widget that may be
+    // gone by the time the sheet closes, but the messenger found now stays
+    // valid — the same reason a State checks `mounted` after awaiting.
+    final messenger = ScaffoldMessenger.of(context);
+
+    final didChange = await showChangePasswordSheet(context);
+    if (didChange != true) return;
+
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Password updated'),
+        backgroundColor: AppColors.teal,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // A name could in theory be empty, and `''[0]` throws a range error rather
@@ -238,6 +262,13 @@ class _ProfileTab extends StatelessWidget {
           label: 'Group',
           value: user.hasGroup ? user.groupId : 'Not in a group yet',
         ),
+        const SizedBox(height: 10),
+
+        _ActionTile(
+          icon: Icons.lock_outline,
+          label: 'Change password',
+          onTap: () => _changePassword(context),
+        ),
         const SizedBox(height: 24),
 
         OutlinedButton.icon(
@@ -257,6 +288,61 @@ class _ProfileTab extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A tappable white row on the profile tab.
+///
+/// Deliberately shaped like [_InfoTile] so the profile reads as one list, with
+/// two differences that mark it as doing something: a chevron on the right,
+/// and an ink ripple when pressed.
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        // InkWell needs a Material above it to paint the ripple on, and the
+        // radius is repeated so the splash doesn't spill past the corners.
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: AppColors.navy),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.navy,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: AppColors.charcoal.withValues(alpha: 0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

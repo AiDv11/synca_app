@@ -111,6 +111,73 @@ class AuthService {
     return getCurrentUser();
   }
 
+  /// Changes the signed-in user's password.
+  ///
+  /// Firebase guards password changes with a **recency** rule. Updating a
+  /// password on a session that was established hours ago throws
+  /// `requires-recent-login`, because the app cannot tell whether the person
+  /// holding the phone is still the account owner or someone who picked up an
+  /// unlocked device. Proving you know the current password re-establishes
+  /// that.
+  ///
+  /// The flow is therefore try-then-prove:
+  ///
+  /// 1. Attempt the update. On a session created moments ago this succeeds
+  ///    outright and costs one round trip.
+  /// 2. If Firebase says the login is too old, sign in again silently with
+  ///    [currentPassword] via [EmailAuthProvider], then retry.
+  ///
+  /// Doing it in that order rather than always reauthenticating first saves a
+  /// network call in the common case — someone who just registered, or who
+  /// signed in a minute ago.
+  ///
+  /// Everything except `requires-recent-login` is rethrown untouched, keeping
+  /// this class's rule that services do not swallow errors. A wrong current
+  /// password surfaces as `wrong-password` or `invalid-credential` from the
+  /// reauthentication step, and the ViewModel turns that into readable text.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final user = _auth.currentUser;
+
+    // Both of these are "shouldn't happen" states — the screen is only
+    // reachable when signed in. Thrown as FirebaseAuthException rather than a
+    // plain Error so the caller has one exception type to handle.
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'no-current-user',
+        message: 'Nobody is signed in.',
+      );
+    }
+
+    final email = user.email;
+    if (email == null) {
+      // Only possible for accounts created through a provider that carries no
+      // email. Synca is email-and-password only, so this is defensive.
+      throw FirebaseAuthException(
+        code: 'no-email',
+        message: 'This account has no email address to re-authenticate with.',
+      );
+    }
+
+    try {
+      await user.updatePassword(newPassword);
+    } on FirebaseAuthException catch (e) {
+      if (e.code != 'requires-recent-login') rethrow;
+
+      // Proves the person asking is the account owner. This throws if the
+      // current password is wrong, which is exactly the check we want.
+      final credential = EmailAuthProvider.credential(
+        email: email,
+        password: currentPassword,
+      );
+      await user.reauthenticateWithCredential(credential);
+
+      await user.updatePassword(newPassword);
+    }
+  }
+
   /// Signs the current user out.
   ///
   /// Firebase keeps the session on the device between app launches, so without
