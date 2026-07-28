@@ -8,6 +8,7 @@ import 'package:synca_app/src/modules/role/member/ui/widget/claim_task_sheet.dar
 import 'package:synca_app/src/modules/role/member/ui/widget/empty_state.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/error_state.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/progress_card.dart';
+import 'package:synca_app/src/modules/role/member/ui/widget/release_task_dialog.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/status_picker_sheet.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/task_card.dart';
 import 'package:synca_app/src/modules/role/member/view_model/my_tasks_view_model.dart';
@@ -62,20 +63,35 @@ class _MyTasksPageState extends State<MyTasksPage> {
     super.dispose();
   }
 
-  /// Tap a task → pick a status, and a proof link if it asks for one → write it.
-  Future<void> _changeStatus(Task task) async {
-    final choice = await showStatusPicker(context: context, task: task);
+  /// Tap a task → the sheet offers a status change or a release → act on it.
+  ///
+  /// The `switch` is exhaustive because [TaskSheetResult] is sealed: there is
+  /// no `default`, and adding a third action to the sheet would stop this
+  /// compiling until it is handled here too.
+  Future<void> _openTaskSheet(Task task) async {
+    final result = await showStatusPicker(context: context, task: task);
 
-    // Null means they swiped the sheet away without choosing.
-    if (choice == null) return;
+    // An await happened, so the page may be gone; null means they swiped the
+    // sheet away without choosing.
+    if (!mounted || result == null) return;
 
+    switch (result) {
+      case StatusChoice():
+        await _changeStatus(task, result);
+      case ReleaseChoice():
+        await _releaseTask(task);
+    }
+  }
+
+  /// Writes the status the member picked, and any proof they attached.
+  Future<void> _changeStatus(Task task, StatusChoice choice) async {
     final error = await _viewModel.changeStatus(
       task,
       choice.status,
       proofUrl: choice.proofUrl,
     );
 
-    // Two awaits have happened, so the screen may be gone. `mounted` is a
+    // An await has happened, so the screen may be gone. `mounted` is a
     // property of State that flips to false once the widget is removed.
     if (!mounted) return;
 
@@ -93,6 +109,33 @@ class _MyTasksPageState extends State<MyTasksPage> {
           : 'Moved to ${choice.status.label}',
       isError: false,
     );
+  }
+
+  /// Confirms, then hands the task back to the group.
+  ///
+  /// The confirmation lives here rather than inside the sheet so the sheet is
+  /// already closed when the dialog appears — a dialog stacked on a bottom
+  /// sheet leaves two things to dismiss and makes Cancel ambiguous.
+  Future<void> _releaseTask(Task task) async {
+    final confirmed = await showReleaseTaskDialog(context: context, task: task);
+
+    // `!= true` rather than `== false`, because dismissing the dialog by
+    // tapping outside it returns null. Only an explicit Release goes on.
+    if (!mounted || confirmed != true) return;
+
+    final error = await _viewModel.releaseTask(task);
+
+    if (!mounted) return;
+
+    if (error != null) {
+      _showSnackBar(error);
+      return;
+    }
+
+    // Nothing to remove from the list by hand: the task no longer matches
+    // "owned by me", so Firestore has already dropped it from the stream and
+    // the row is gone.
+    _showSnackBar('Released "${task.title}"', isError: false);
   }
 
   /// Opens a task's proof link in the browser.
@@ -246,7 +289,7 @@ class _MyTasksPageState extends State<MyTasksPage> {
         final task = tasks[index];
         return TaskCard(
           task: task,
-          onTap: () => _changeStatus(task),
+          onTap: () => _openTaskSheet(task),
           onOpenProof: () => _openProof(task),
         );
       },

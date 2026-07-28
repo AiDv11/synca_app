@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
+import 'package:synca_app/src/modules/role/member/ui/widget/leave_group_dialog.dart';
 import 'package:synca_app/src/modules/role/member/view_model/group_view_model.dart';
 
 /// The Group tab: join a group, or see the one you're in and leave it.
@@ -63,7 +64,26 @@ class _GroupPageState extends State<GroupPage> {
     _showSnackBar('Joined $code', isError: false);
   }
 
+  /// Confirms, then leaves the group.
+  ///
+  /// Leaving used to happen on the tap itself. It is not a small action — the
+  /// whole board goes away the instant `groupId` is cleared, and getting back
+  /// in needs the code, which the member may not have anywhere else. The
+  /// confirmation is read before the code disappears from the screen.
   Future<void> _leave() async {
+    // Captured before the dialog: after leaving, the ViewModel's groupId is
+    // empty, and the dialog would have nothing to show.
+    final groupId = _viewModel.groupId;
+
+    final confirmed = await showLeaveGroupDialog(
+      context: context,
+      groupId: groupId,
+    );
+
+    // `!= true` rather than `== false`, because dismissing the dialog by
+    // tapping outside it returns null. Only an explicit Leave goes on.
+    if (!mounted || confirmed != true) return;
+
     final didLeave = await _viewModel.leave();
     if (!didLeave || !mounted) return;
 

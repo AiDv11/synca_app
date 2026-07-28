@@ -6,12 +6,23 @@ import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/role/member/model/proof_link.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/status_chip.dart';
 
-/// What the member chose in the status picker.
+/// What the member chose to do with a task.
 ///
-/// A small class rather than returning a bare [TaskStatus], because the sheet
-/// now answers two questions at once: which status, and what proof (if any).
-/// A record would work, but a named type keeps the call site readable.
-class StatusChoice {
+/// `sealed` means the only two subtypes are the ones written just below, in
+/// this file — nothing else can extend it. That is what lets the call site
+/// `switch` over a result and have the compiler confirm both cases are handled.
+/// Add a third action here and every switch in the app fails to compile until
+/// it is dealt with, which is the point: a silently ignored action would look
+/// like a button that does nothing.
+sealed class TaskSheetResult {
+  const TaskSheetResult();
+}
+
+/// Move the task along, optionally attaching proof.
+///
+/// A named type rather than a bare [TaskStatus], because this answers two
+/// questions at once: which status, and what proof (if any).
+final class StatusChoice extends TaskSheetResult {
   const StatusChoice({required this.status, this.proofUrl});
 
   final TaskStatus status;
@@ -23,19 +34,33 @@ class StatusChoice {
   final String? proofUrl;
 }
 
-/// Slides up the status list for [task] and waits for a choice.
+/// Give the task back to the group.
 ///
-/// Returns the chosen status and proof, or null if the member backed out by
-/// swiping the sheet away. Callers must handle null; it means "do nothing".
+/// Carries no data — the task is already known to the caller, and there is
+/// nothing to choose. It exists as a type so "release" cannot be mistaken for
+/// a status change, which is exactly what a boolean flag on [StatusChoice]
+/// would have invited.
+final class ReleaseChoice extends TaskSheetResult {
+  const ReleaseChoice();
+}
+
+/// Slides up the actions for [task] and waits for a choice.
+///
+/// Returns what the member picked, or null if they backed out by swiping the
+/// sheet away. Callers must handle null; it means "do nothing".
+///
+/// Only ever opened for a task the member owns — it is reached by tapping a row
+/// in My Tasks — which is why the release option below needs no permission
+/// check of its own.
 ///
 /// `isScrollControlled` and the `viewInsets` padding inside are what let the
 /// sheet rise above the on-screen keyboard when the proof field has focus.
 /// Without them the keyboard covers the very field being typed into.
-Future<StatusChoice?> showStatusPicker({
+Future<TaskSheetResult?> showStatusPicker({
   required BuildContext context,
   required Task task,
 }) {
-  return showModalBottomSheet<StatusChoice>(
+  return showModalBottomSheet<TaskSheetResult>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.white,
@@ -222,6 +247,48 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
           isCurrent: status == widget.task.status,
           needsProof: _needsProof(status),
           onTap: () => _selectStatus(status),
+        ),
+      ),
+
+      // Hidden once the work is done. Releasing resets the status to Not
+      // started, so offering it here would be offering to erase a completion —
+      // and it would take the task out of the group's finished count without
+      // anybody meaning to. A member who genuinely needs to undo a completion
+      // can move the status back first, then release.
+      if (!widget.task.status.isDone) ..._buildReleaseRow(),
+    ];
+  }
+
+  /// The way out of a task: hand it back to the group.
+  ///
+  /// Below the statuses and behind a divider, because it is a different kind of
+  /// action. The four rows above adjust a task the member is keeping; this one
+  /// gives it up, and it should not sit in the same visual run as them where a
+  /// mis-tap could reach it.
+  ///
+  /// It only asks — the confirmation is the caller's, so the sheet closes
+  /// first and the dialog is not stacked on top of it.
+  List<Widget> _buildReleaseRow() {
+    return [
+      const Divider(height: 1),
+      ListTile(
+        onTap: () => Navigator.of(context).pop(const ReleaseChoice()),
+        leading: const Icon(
+          Icons.undo,
+          color: AppColors.danger,
+          size: 20,
+        ),
+        title: const Text(
+          'Release back to the group',
+          style: TextStyle(
+            color: AppColors.danger,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: const Text(
+          'Anyone in your group can claim it again',
+          style: TextStyle(fontSize: 12, color: AppColors.charcoal),
         ),
       ),
     ];

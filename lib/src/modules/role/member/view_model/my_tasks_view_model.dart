@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:synca_app/src/core/constants/task_status.dart';
 import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
+import 'package:synca_app/src/modules/role/member/model/services/task_ownership_service.dart';
 import 'package:synca_app/src/modules/role/member/view_model/load_error_message.dart';
 
 /// State and behaviour for the member's "My Tasks" screen.
@@ -27,8 +28,12 @@ import 'package:synca_app/src/modules/role/member/view_model/load_error_message.
 /// Nobody polls, and nothing calls `setState` manually. A task marked complete
 /// on another member's phone shows up here within a second.
 class MyTasksViewModel extends ChangeNotifier {
-  MyTasksViewModel({required this.user, TaskService? taskService})
-    : _taskService = taskService ?? TaskService() {
+  MyTasksViewModel({
+    required this.user,
+    TaskService? taskService,
+    TaskOwnershipService? ownershipService,
+  }) : _taskService = taskService ?? TaskService(),
+       _ownershipService = ownershipService ?? TaskOwnershipService() {
     _subscribe();
   }
 
@@ -37,6 +42,7 @@ class MyTasksViewModel extends ChangeNotifier {
   final AppUser user;
 
   final TaskService _taskService;
+  final TaskOwnershipService _ownershipService;
 
   /// The live connection to Firestore. Kept in a field for one reason: it has
   /// to be cancelled in [dispose]. An uncancelled subscription keeps listening
@@ -173,6 +179,49 @@ class MyTasksViewModel extends ChangeNotifier {
           : "Couldn't update the task. Please try again.";
     } catch (_) {
       return "Couldn't update the task. Please try again.";
+    }
+  }
+
+  /// Gives a task back to the group.
+  ///
+  /// Same contract as [changeStatus]: null on success, a sentence to show the
+  /// member on failure. And the same reason there is no local list edit — the
+  /// released task stops matching `ownerUid == me`, so Firestore drops it from
+  /// the stream and the row disappears on its own.
+  ///
+  /// > **Expect this to fail against the deployed rules.** The `/tasks` update
+  /// > rule has no clause permitting a member to clear `ownerUid`, so the write
+  /// > comes back `permission-denied` until `firestore.rules` gains one. The
+  /// > message for that code below is written to be honest about it rather than
+  /// > blaming the member for something they did nothing wrong to trigger.
+  Future<String?> releaseTask(Task task) async {
+    // Checked here as well as in the service and the rules. This one is not
+    // about security — it is about not sending a write that is certain to be
+    // refused, when the list on screen already says the task isn't theirs.
+    if (task.ownerUid != user.uid) {
+      return "That task isn't yours to release.";
+    }
+
+    try {
+      await _ownershipService.releaseTask(taskId: task.id, uid: user.uid);
+      return null;
+    } on StateError catch (e) {
+      // Thrown by the service when the document changed underneath — already
+      // released, or reassigned by the leader a moment ago. Its message is
+      // already written for the member.
+      return e.message;
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          'releaseTask refused: the /tasks update rule has no release clause. '
+          'See firestore.rules.',
+        );
+        return 'Releasing tasks is not switched on for this project yet.';
+      }
+      return "Couldn't release the task. Please try again.";
+    } catch (error) {
+      debugPrint('releaseTask failed: $error');
+      return "Couldn't release the task. Please try again.";
     }
   }
 
