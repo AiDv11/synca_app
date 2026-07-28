@@ -6,7 +6,10 @@ import 'package:synca_app/src/modules/common/auth/model/services/auth_service.da
 import 'package:synca_app/src/modules/role/member/ui/page/group_page.dart';
 import 'package:synca_app/src/modules/role/member/ui/page/my_tasks_page.dart';
 import 'package:synca_app/src/modules/role/member/ui/page/timeline_page.dart';
+import 'package:synca_app/src/modules/role/member/ui/widget/avatar_picker_sheet.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/change_password_sheet.dart';
+import 'package:synca_app/src/modules/role/member/ui/widget/member_avatar.dart';
+import 'package:synca_app/src/modules/role/member/view_model/avatar_picker_view_model.dart';
 
 /// Home shell for a Group Member.
 ///
@@ -179,17 +182,55 @@ class _MemberDashboardState extends State<MemberDashboard> {
 }
 
 /// The member's details and the way out of the app.
-class _ProfileTab extends StatelessWidget {
+///
+/// Stateful because of the avatar: it is fetched once when this tab is built
+/// and can be changed from the picker, so something has to hold it between
+/// those two moments. Everything else on this screen comes straight from the
+/// [AppUser] handed down by the shell.
+class _ProfileTab extends StatefulWidget {
   const _ProfileTab({required this.user});
 
   final AppUser user;
+
+  @override
+  State<_ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends State<_ProfileTab> {
+  /// Holds the chosen avatar and does the reading and writing.
+  ///
+  /// Created here rather than inside the picker sheet so the value survives the
+  /// sheet closing — the circle at the top of this screen has to keep showing
+  /// it.
+  late final AvatarPickerViewModel _avatarViewModel;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _avatarViewModel = AvatarPickerViewModel(uid: widget.user.uid);
+
+    // Not awaited: initState cannot be async, and there is nothing to wait for
+    // anyway. The circle renders the initial letter now and swaps to the stored
+    // avatar when the read comes back, a moment later.
+    _avatarViewModel.load();
+  }
+
+  @override
+  void dispose() {
+    // This tab created the ViewModel, so this tab disposes it. A ChangeNotifier
+    // that is never disposed keeps its listeners alive — a leak every time the
+    // dashboard is rebuilt.
+    _avatarViewModel.dispose();
+    super.dispose();
+  }
 
   /// Opens the change-password sheet and confirms if it succeeded.
   ///
   /// The sheet owns the whole interaction — fields, validation, errors and the
   /// call itself — and returns true only when the password actually changed.
   /// This method's only job is the confirmation message.
-  Future<void> _changePassword(BuildContext context) async {
+  Future<void> _changePassword() async {
     // Captured before the await. `context` belongs to a widget that may be
     // gone by the time the sheet closes, but the messenger found now stays
     // valid — the same reason a State checks `mounted` after awaiting.
@@ -207,27 +248,46 @@ class _ProfileTab extends StatelessWidget {
     );
   }
 
+  /// Opens the avatar grid and confirms if the member picked one.
+  ///
+  /// No `setState` afterwards. The sheet's ViewModel *is* this tab's ViewModel,
+  /// so the new id is already stored on it, and the [ListenableBuilder] around
+  /// the circle has redrawn on its own. All that is left is the message.
+  Future<void> _changeAvatar() async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    final didChange = await showAvatarPickerSheet(
+      context: context,
+      viewModel: _avatarViewModel,
+    );
+    if (didChange != true) return;
+
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Avatar updated'),
+        backgroundColor: AppColors.teal,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // A name could in theory be empty, and `''[0]` throws a range error rather
-    // than returning nothing — a crash on a screen that just shows a letter.
-    final initial = user.name.isNotEmpty ? user.name[0].toUpperCase() : '?';
+    final user = widget.user;
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         const SizedBox(height: 8),
         Center(
-          child: CircleAvatar(
-            radius: 40,
-            backgroundColor: AppColors.navy,
-            child: Text(
-              initial,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-              ),
+          // Rebuilds just the circle when the avatar loads or changes, leaving
+          // the rest of the list alone.
+          child: ListenableBuilder(
+            listenable: _avatarViewModel,
+            builder: (context, _) => _AvatarButton(
+              avatarId: _avatarViewModel.avatarId,
+              name: user.name,
+              onTap: _changeAvatar,
             ),
           ),
         ),
@@ -264,10 +324,19 @@ class _ProfileTab extends StatelessWidget {
         ),
         const SizedBox(height: 10),
 
+        // The circle above is tappable too. This row is the discoverable half —
+        // a tap target that says what it does, for anyone who doesn't think to
+        // press their own picture.
+        _ActionTile(
+          icon: Icons.face_outlined,
+          label: 'Change avatar',
+          onTap: _changeAvatar,
+        ),
+        const SizedBox(height: 10),
         _ActionTile(
           icon: Icons.lock_outline,
           label: 'Change password',
-          onTap: () => _changePassword(context),
+          onTap: _changePassword,
         ),
         const SizedBox(height: 24),
 
@@ -285,6 +354,67 @@ class _ProfileTab extends StatelessWidget {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The profile picture, with a badge marking it as something you can press.
+///
+/// Without the badge a circle is just a picture, and nobody would think to tap
+/// it. The pencil is the whole reason this isn't a plain [MemberAvatar].
+class _AvatarButton extends StatelessWidget {
+  const _AvatarButton({
+    required this.avatarId,
+    required this.name,
+    required this.onTap,
+  });
+
+  final String? avatarId;
+  final String name;
+  final VoidCallback onTap;
+
+  static const double _radius = 40;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        MemberAvatar(avatarId: avatarId, name: name, radius: _radius),
+
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: AppColors.teal,
+              shape: BoxShape.circle,
+              // A ring in the page's background colour, so the badge reads as
+              // sitting on top of the avatar rather than merging into it.
+              border: Border.all(color: AppColors.light, width: 2),
+            ),
+            child: const Icon(Icons.edit, size: 14, color: Colors.white),
+          ),
+        ),
+
+        // The tap layer goes last, so it covers everything above and the whole
+        // circle responds — including the badge.
+        //
+        // It has to be on top for the ripple to be seen at all. An ink splash
+        // is painted onto the nearest Material *behind* the widget, so an
+        // InkWell wrapped around the avatar would splash underneath it and stay
+        // invisible. A transparent Material above the avatar gives the ripple
+        // somewhere visible to land; the circular shape keeps it from splashing
+        // a square.
+        Positioned.fill(
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(onTap: onTap),
           ),
         ),
       ],
