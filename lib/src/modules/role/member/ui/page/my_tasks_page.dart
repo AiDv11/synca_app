@@ -9,6 +9,7 @@ import 'package:synca_app/src/modules/role/member/ui/widget/empty_state.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/error_state.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/progress_card.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/release_task_dialog.dart';
+import 'package:synca_app/src/modules/role/member/ui/widget/remove_proof_dialog.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/status_picker_sheet.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/task_card.dart';
 import 'package:synca_app/src/modules/role/member/view_model/my_tasks_view_model.dart';
@@ -78,9 +79,42 @@ class _MyTasksPageState extends State<MyTasksPage> {
     switch (result) {
       case StatusChoice():
         await _changeStatus(task, result);
+      case ProofChoice():
+        await _updateProof(task, result);
       case ReleaseChoice():
         await _releaseTask(task);
     }
+  }
+
+  /// Saves an edited proof link, or removes it after confirming.
+  ///
+  /// Only the removal asks. Replacing a link is an ordinary correction and
+  /// stopping to confirm it would make fixing a typo cost two taps for nothing.
+  Future<void> _updateProof(Task task, ProofChoice choice) async {
+    if (choice.isRemoval) {
+      final confirmed = await showRemoveProofDialog(
+        context: context,
+        task: task,
+      );
+
+      // `!= true` rather than `== false`, because dismissing the dialog by
+      // tapping outside it returns null.
+      if (!mounted || confirmed != true) return;
+    }
+
+    final error = await _viewModel.updateProof(task, choice.proofUrl);
+
+    if (!mounted) return;
+
+    if (error != null) {
+      _showSnackBar(error);
+      return;
+    }
+
+    _showSnackBar(
+      choice.isRemoval ? 'Proof removed' : 'Proof link updated',
+      isError: false,
+    );
   }
 
   /// Writes the status the member picked, and any proof they attached.
@@ -141,9 +175,14 @@ class _MyTasksPageState extends State<MyTasksPage> {
   /// Opens a task's proof link in the browser.
   Future<void> _openProof(Task task) async {
     final url = task.proofUrl;
-    if (url == null) return;
 
-    final opened = await ProofLink.open(url);
+    // `hasProof`, not a null check: a task whose proof was removed holds an
+    // empty string, and there is nothing to open. The `!` is safe because of
+    // it — but Dart's flow analysis cannot see inside the helper, so it has to
+    // be written out.
+    if (!ProofLink.hasProof(url)) return;
+
+    final opened = await ProofLink.open(url!);
 
     if (!mounted || opened) return;
 

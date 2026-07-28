@@ -34,6 +34,25 @@ final class StatusChoice extends TaskSheetResult {
   final String? proofUrl;
 }
 
+/// Change the proof link on its own, without touching the status.
+///
+/// The reason this variant exists: correcting a mistyped link used to mean
+/// walking the task through a status again, and every such write moves the
+/// timeline row derived from `lastUpdatedAt`. Fixing a URL should not restate
+/// that the work was submitted.
+final class ProofChoice extends TaskSheetResult {
+  const ProofChoice(this.proofUrl);
+
+  /// The new link, already normalised — or **empty, meaning remove it**.
+  ///
+  /// One variant covers both because they are the same write to the same
+  /// field, and the caller has to confirm before an empty one either way.
+  final String proofUrl;
+
+  /// True when this is a removal rather than a replacement.
+  bool get isRemoval => proofUrl.isEmpty;
+}
+
 /// Give the task back to the group.
 ///
 /// Carries no data — the task is already known to the caller, and there is
@@ -92,6 +111,13 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
   /// are still looking at the list.
   TaskStatus? _pendingStatus;
 
+  /// True once the member has chosen to edit the existing proof on its own.
+  ///
+  /// A separate flag rather than a third value of [_pendingStatus], because
+  /// this path deliberately has **no** status attached — that is the whole
+  /// point of it.
+  bool _editingProof = false;
+
   final _proofController = TextEditingController();
 
   /// Set once the member submits something that isn't a URL. Held rather than
@@ -105,9 +131,14 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
 
     // Pre-fill with whatever proof the task already carries, so re-opening the
     // sheet to change a status doesn't silently blank a link they added
-    // earlier. Editing it is then a deliberate act.
+    // earlier. Editing it is then a deliberate act. This is also what makes the
+    // edit-proof path arrive with the field already filled.
+    //
+    // `hasProof` rather than a null check: a task whose proof was removed holds
+    // an empty string, and pre-filling with that is the same as pre-filling
+    // with nothing.
     final existing = widget.task.proofUrl;
-    if (existing != null) _proofController.text = existing;
+    if (ProofLink.hasProof(existing)) _proofController.text = existing!;
   }
 
   @override
@@ -162,10 +193,58 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
     );
   }
 
+  /// Opens the link field on its own, with no status attached.
+  void _editProof() {
+    setState(() {
+      _editingProof = true;
+      _proofError = null;
+    });
+  }
+
+  /// Saves an edited link. Status is untouched — that is the point.
+  void _saveProof() {
+    final raw = _proofController.text;
+
+    // Emptying the field is not a quiet way to delete the proof. Removal is a
+    // deliberate act with its own button and its own confirmation, so a blank
+    // field here is treated as an unfinished edit rather than an instruction.
+    if (raw.trim().isEmpty) {
+      setState(() {
+        _proofError =
+            'Enter a link, or use Remove proof below to take it off '
+            'the task.';
+      });
+      return;
+    }
+
+    final normalised = ProofLink.normalise(raw);
+    if (normalised == null) {
+      setState(() {
+        _proofError =
+            "That doesn't look like a link. Include the full address, "
+            'for example docs.google.com/document/...';
+      });
+      return;
+    }
+
+    Navigator.of(context).pop(ProofChoice(normalised));
+  }
+
+  /// Asks to remove the proof. The confirmation is the caller's — see the note
+  /// on [_buildReleaseRow].
+  void _removeProof() => Navigator.of(context).pop(const ProofChoice(''));
+
   void _backToList() {
     setState(() {
       _pendingStatus = null;
+      _editingProof = false;
       _proofError = null;
+
+      // Put back whatever is actually stored, so backing out of an edit does
+      // not leave half-typed text waiting in the field if they then pick a
+      // status that asks for proof.
+      final existing = widget.task.proofUrl;
+      _proofController.text = ProofLink.hasProof(existing) ? existing! : '';
     });
   }
 
@@ -212,8 +291,14 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
                 ),
               ),
 
-              if (_pendingStatus == null) ..._buildStatusList(),
-              if (_pendingStatus != null) ..._buildProofStep(),
+              // Three mutually exclusive steps. Written as if/else rather than
+              // three independent `if`s so two can never render at once.
+              if (_editingProof)
+                ..._buildProofEditStep()
+              else if (_pendingStatus != null)
+                ..._buildProofStep()
+              else
+                ..._buildStatusList(),
 
               const SizedBox(height: 8),
             ],
@@ -250,12 +335,128 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
         ),
       ),
 
+      // Only when there is already a link to correct. There is deliberately no
+      // way to *add* proof from here: attaching evidence stays tied to
+      // submitting work, through Ready for review or Completed. This row exists
+      // to fix a link, not to become a second door to the same act.
+      if (ProofLink.hasProof(widget.task.proofUrl)) ..._buildEditProofRow(),
+
       // Hidden once the work is done. Releasing resets the status to Not
       // started, so offering it here would be offering to erase a completion —
       // and it would take the task out of the group's finished count without
       // anybody meaning to. A member who genuinely needs to undo a completion
       // can move the status back first, then release.
       if (!widget.task.status.isDone) ..._buildReleaseRow(),
+    ];
+  }
+
+  /// Correcting the link that is already on the task.
+  ///
+  /// Sits with the status rows rather than behind the release divider, because
+  /// it is an ordinary edit to a task the member is keeping — the opposite of
+  /// giving it up.
+  List<Widget> _buildEditProofRow() {
+    return [
+      const Divider(height: 1),
+      ListTile(
+        onTap: _editProof,
+        leading: const Icon(Icons.link, color: AppColors.teal, size: 20),
+        title: const Text(
+          'Edit proof',
+          style: TextStyle(
+            color: AppColors.navy,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          // The host, not the whole URL — the same short label the card shows,
+          // so the member can tell at a glance which link this is.
+          ProofLink.displayLabel(widget.task.proofUrl!),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, color: AppColors.charcoal),
+        ),
+      ),
+    ];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 2b — edit the existing link, on its own
+  // ---------------------------------------------------------------------------
+
+  /// The same field as [_buildProofStep], with no status attached.
+  ///
+  /// Saving from here writes `proofUrl` and `lastUpdatedAt` only. No status, and
+  /// crucially no `completedAt` — going through `TaskService.updateStatus`
+  /// would restamp the completion date of a finished task just for a link fix.
+  List<Widget> _buildProofEditStep() {
+    return [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+        child: Text(
+          'Edit proof link',
+          style: TextStyle(fontSize: 13, color: AppColors.charcoal),
+        ),
+      ),
+      const Divider(height: 1),
+
+      _buildProofField(onSubmitted: _saveProof),
+
+      const Padding(
+        padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
+        child: Text(
+          'The status of this task will not change.',
+          style: TextStyle(
+            fontSize: 12,
+            color: AppColors.charcoal,
+            height: 1.4,
+          ),
+        ),
+      ),
+
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        child: Row(
+          children: [
+            TextButton(
+              onPressed: _backToList,
+              style: TextButton.styleFrom(foregroundColor: AppColors.charcoal),
+              child: const Text('Back'),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                onPressed: _saveProof,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.teal,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Save link',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+
+      // Set apart from Save, and in danger red, because it throws away a record
+      // of work rather than correcting one.
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+        child: TextButton.icon(
+          onPressed: _removeProof,
+          icon: const Icon(Icons.delete_outline, size: 18),
+          label: const Text('Remove proof'),
+          style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+        ),
+      ),
     ];
   }
 
@@ -294,6 +495,49 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
     ];
   }
 
+  /// The link field itself, shared by both proof steps.
+  ///
+  /// One definition rather than two, so "the same link field, pre-filled" is
+  /// literally the same widget — the label, the hint, the validation message
+  /// and the keyboard type cannot drift apart between attaching proof and
+  /// correcting it. Only what happens on submit differs, so that is the one
+  /// thing passed in.
+  Widget _buildProofField({required VoidCallback onSubmitted}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: TextField(
+        controller: _proofController,
+        autofocus: true,
+        keyboardType: TextInputType.url,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => onSubmitted(),
+        // Clear the error as soon as they start fixing it, so the message
+        // never contradicts what is currently in the box.
+        onChanged: (_) {
+          if (_proofError != null) setState(() => _proofError = null);
+        },
+        style: const TextStyle(color: AppColors.navy, fontSize: 14),
+        decoration: InputDecoration(
+          labelText: 'Link to your work',
+          hintText: 'docs.google.com/document/...',
+          errorText: _proofError,
+          prefixIcon: const Icon(Icons.link, color: AppColors.navy),
+          filled: true,
+          fillColor: AppColors.light,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.teal, width: 2),
+          ),
+          labelStyle: const TextStyle(color: AppColors.charcoal),
+        ),
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Step 2 — attach a link
   // ---------------------------------------------------------------------------
@@ -319,39 +563,7 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
       ),
       const Divider(height: 1),
 
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-        child: TextField(
-          controller: _proofController,
-          autofocus: true,
-          keyboardType: TextInputType.url,
-          textInputAction: TextInputAction.done,
-          onSubmitted: (_) => _confirm(),
-          // Clear the error as soon as they start fixing it, so the message
-          // never contradicts what is currently in the box.
-          onChanged: (_) {
-            if (_proofError != null) setState(() => _proofError = null);
-          },
-          style: const TextStyle(color: AppColors.navy, fontSize: 14),
-          decoration: InputDecoration(
-            labelText: 'Link to your work',
-            hintText: 'docs.google.com/document/...',
-            errorText: _proofError,
-            prefixIcon: const Icon(Icons.link, color: AppColors.navy),
-            filled: true,
-            fillColor: AppColors.light,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.teal, width: 2),
-            ),
-            labelStyle: const TextStyle(color: AppColors.charcoal),
-          ),
-        ),
-      ),
+      _buildProofField(onSubmitted: _confirm),
 
       const Padding(
         padding: EdgeInsets.fromLTRB(20, 10, 20, 0),

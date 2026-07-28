@@ -7,6 +7,7 @@ import 'package:synca_app/src/core/constants/task_status.dart';
 import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 import 'package:synca_app/src/modules/role/member/model/services/task_ownership_service.dart';
+import 'package:synca_app/src/modules/role/member/model/services/task_proof_service.dart';
 import 'package:synca_app/src/modules/role/member/view_model/load_error_message.dart';
 
 /// State and behaviour for the member's "My Tasks" screen.
@@ -32,8 +33,10 @@ class MyTasksViewModel extends ChangeNotifier {
     required this.user,
     TaskService? taskService,
     TaskOwnershipService? ownershipService,
+    TaskProofService? proofService,
   }) : _taskService = taskService ?? TaskService(),
-       _ownershipService = ownershipService ?? TaskOwnershipService() {
+       _ownershipService = ownershipService ?? TaskOwnershipService(),
+       _proofService = proofService ?? TaskProofService() {
     _subscribe();
   }
 
@@ -43,6 +46,7 @@ class MyTasksViewModel extends ChangeNotifier {
 
   final TaskService _taskService;
   final TaskOwnershipService _ownershipService;
+  final TaskProofService _proofService;
 
   /// The live connection to Firestore. Kept in a field for one reason: it has
   /// to be cancelled in [dispose]. An uncancelled subscription keeps listening
@@ -179,6 +183,40 @@ class MyTasksViewModel extends ChangeNotifier {
           : "Couldn't update the task. Please try again.";
     } catch (_) {
       return "Couldn't update the task. Please try again.";
+    }
+  }
+
+  /// Changes the proof link on a task, or removes it when [proofUrl] is empty.
+  ///
+  /// Same contract as [changeStatus]: null on success, a sentence to show the
+  /// member on failure.
+  ///
+  /// No status is written, which is the entire point — correcting a mistyped
+  /// link should not restate that the work was submitted. Permitted by the
+  /// deployed rules with no change: `isOwnerUpdatingOwnTask` allows
+  /// `hasOnly(['status', 'proofUrl', 'lastUpdatedAt', 'completedAt'])`, and a
+  /// subset of that list passes.
+  ///
+  /// One method for edit and remove because they are the same write. The
+  /// difference is entirely in what the caller must ask first.
+  Future<String?> updateProof(Task task, String proofUrl) async {
+    // The rules enforce this too; here it just avoids sending a write that is
+    // certain to be refused.
+    if (task.ownerUid != user.uid) {
+      return "That task isn't yours to edit.";
+    }
+
+    try {
+      await _proofService.setProof(taskId: task.id, proofUrl: proofUrl);
+      return null;
+    } on FirebaseException catch (e) {
+      debugPrint('setProof failed: [${e.code}] ${e.message}');
+      return e.code == 'permission-denied'
+          ? "You don't have permission to change that task."
+          : "Couldn't save the proof link. Please try again.";
+    } catch (error) {
+      debugPrint('setProof failed: $error');
+      return "Couldn't save the proof link. Please try again.";
     }
   }
 

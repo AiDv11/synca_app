@@ -42,6 +42,20 @@ abstract final class ProofLink {
     return raw.trim().isEmpty || normalise(raw) != null;
   }
 
+  /// Does this task actually carry proof?
+  ///
+  /// Not the same question as `proofUrl != null`, and every reader must ask it
+  /// this way instead. Removing proof writes an **empty string** rather than
+  /// deleting the field, so a task with no evidence can hold `null` (never had
+  /// any) or `''` (had some, removed). A plain null check treats the second as
+  /// proof that exists, which paints an empty link chip on the card and an
+  /// unearned "Proof uploaded" row on the timeline.
+  ///
+  /// One helper rather than `?.isNotEmpty ?? false` at each call site, so the
+  /// two representations are collapsed in exactly one place and a third reader
+  /// added later cannot get it wrong.
+  static bool hasProof(String? url) => url != null && url.trim().isNotEmpty;
+
   /// Opens [url] in the browser. True if the handoff worked.
   ///
   /// `LaunchMode.externalApplication` sends the link to the real browser rather

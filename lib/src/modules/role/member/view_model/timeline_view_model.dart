@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:synca_app/src/core/constants/task_status.dart';
 import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
+import 'package:synca_app/src/modules/role/member/model/proof_link.dart';
 import 'package:synca_app/src/modules/role/member/view_model/load_error_message.dart';
 import 'package:synca_app/src/modules/role/member/view_model/timeline_entry.dart';
 
@@ -33,6 +34,26 @@ import 'package:synca_app/src/modules/role/member/view_model/timeline_entry.dart
 ///   time.
 /// - Proof uploaded. `proofUrl` has no timestamp of its own; it is written in
 ///   the same call as a status change, so that call's time is used.
+///
+/// ## Known misleading case: editing proof on its own
+///
+/// Proof can now be corrected without a status change. That write still touches
+/// `lastUpdatedAt`, and **two** rows are derived from it, so both move to the
+/// moment of the edit:
+///
+/// - the "Proof uploaded" row — arguably fair, the proof did just change;
+/// - the inferred "Started work" / "Marked ready for review" row — **wrong**.
+///   Fixing a typo in a URL will read as though the member submitted the work
+///   again at that moment.
+///
+/// A completed task is safe: its row comes from `completedAt`, which the proof
+/// write does not touch.
+///
+/// This is strictly better than the workaround it replaces — walking the task
+/// through a status again moved the same row *and* wrote a real status change —
+/// but it does not eliminate the problem. The only real fix is the append-only
+/// `activity` subcollection described above: once each event carries its own
+/// timestamp, nothing has to be inferred from `lastUpdatedAt` at all.
 ///
 /// The remaining gap is history: a task that went Not started → In progress →
 /// Ready for review keeps only the last of those moments, because each write
@@ -165,9 +186,15 @@ class TimelineViewModel extends ChangeNotifier {
 
       // ---- proof: real event, borrowed timestamp ----
 
-      // `proofUrl` has no date of its own. It is written in the same call as a
-      // status change, so the last write time is accurate in practice.
-      if (task.proofUrl != null) {
+      // `proofUrl` has no date of its own, so `lastUpdatedAt` stands in. That
+      // is now less accurate than it was: proof can be edited on its own, which
+      // moves this row to the edit time — and moves the inferred status row
+      // above with it. See the class note.
+      //
+      // `hasProof` rather than a null check, because removing proof writes an
+      // empty string rather than deleting the field. A null check would leave a
+      // "Proof uploaded" row on a task whose evidence has been taken away.
+      if (ProofLink.hasProof(task.proofUrl)) {
         _addEntry(
           derived,
           task,

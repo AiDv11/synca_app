@@ -59,9 +59,12 @@ class TaskCard extends StatelessWidget {
       isDone: task.status.isDone,
     );
 
-    // Pulled into a local so Dart's flow analysis promotes it from String? to
-    // String inside the null check below — otherwise every use needs a `!`.
-    final proofUrl = task.proofUrl;
+    // Null unless there is a real link. `ProofLink.hasProof` is the one place
+    // that knows removed proof is stored as an empty string, and collapsing
+    // both "no proof" cases to null here means the check below is a plain null
+    // test — which Dart's flow analysis can see through, promoting this from
+    // String? to String so the uses inside need no `!`.
+    final proofUrl = ProofLink.hasProof(task.proofUrl) ? task.proofUrl : null;
 
     return Material(
       // A tint and an outline rather than a redesign: the card keeps its shape
