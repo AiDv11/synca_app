@@ -36,7 +36,15 @@ class ErrorState extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 8),
-          const Icon(Icons.bug_report_outlined, size: 44, color: Colors.red),
+          // Sky blue rather than red: this screen is now a polite apology with
+          // a Retry button, not a fault report. Red reads as "something is
+          // broken", which overstates a dropped connection and matches the
+          // colour the task cards use for genuinely overdue work.
+          const Icon(
+            Icons.cloud_off_outlined,
+            size: 44,
+            color: AppColors.skyBlue,
+          ),
           const SizedBox(height: 12),
           Text(
             title,
