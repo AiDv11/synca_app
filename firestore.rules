@@ -192,7 +192,7 @@ service cloud.firestore {
                     && isInGroup(request.resource.data.groupId)
                     && request.resource.data.status == 'notStarted';
 
-      // UPDATE — three narrow, mutually exclusive cases.
+      // UPDATE — four narrow, mutually exclusive cases.
       //
       // Everything must be in the caller's group first; the specific case is
       // then checked below. Splitting it this way means a member can never
@@ -201,7 +201,10 @@ service cloud.firestore {
       allow update: if isSignedIn()
                     && isInGroup(resource.data.groupId)
                     && isInGroup(request.resource.data.groupId)
-                    && (isClaimingTask() || isOwnerUpdatingOwnTask() || isLeaderReassigning());
+                    && (isClaimingTask()
+                        || isOwnerUpdatingOwnTask()
+                        || isOwnerReleasingTask()
+                        || isLeaderReassigning());
 
       // Requiring the group on both the stored and incoming document, as above,
       // is what stops a task being moved between groups. Change groupId and the
@@ -237,13 +240,50 @@ service cloud.firestore {
       // deadline would defeat the at-risk tracking entirely.
       //
       // ownerUid is absent from the list, so a member cannot hand a task to
-      // somebody else. Reassignment is a leader action, below.
+      // somebody else through this case. Giving it up entirely is Case 3;
+      // handing it to a named person is Case 4, and a leader's job.
       function isOwnerUpdatingOwnTask() {
         return resource.data.ownerUid == request.auth.uid
             && changedKeys().hasOnly(['status', 'proofUrl', 'lastUpdatedAt', 'completedAt']);
       }
 
-      // Case 3 — a leader reassigns a task.
+      // Case 3 — the owner gives a task back to the group.
+      //
+      // The mirror image of Case 1. A member who has claimed something they
+      // cannot finish needs a way to release it without waiting for a leader,
+      // otherwise the task sits owned and untouched until somebody notices.
+      //
+      // What keeps this from being a back door into Case 4: the incoming
+      // ownerUid must be the empty string. A member can therefore release a
+      // task to *nobody*, but still cannot hand it to a *named* person — that
+      // remains a leader's decision. The empty ownerName is required for the
+      // same reason a claim writes one: an unowned task carrying a leftover
+      // name would show the wrong person as responsible everywhere it is read.
+      //
+      // The status is pinned to 'notStarted' rather than merely being listed as
+      // permitted. Without that, this branch would be a way to set any status
+      // at all in the same write — a member could park a task as completed on
+      // the way out and inflate the group's progress figure. Returning it to
+      // 'notStarted' is also what the claim sheet expects: unclaimed work is
+      // work nobody has begun.
+      //
+      // claimedAt is in the list because the claim it records has been undone.
+      // proofUrl is deliberately NOT: evidence of work that really happened
+      // survives the task changing hands, which is the whole point of keeping
+      // it. completedAt is absent too, so this cannot quietly rewrite when a
+      // task was finished.
+      //
+      // The field list mirrors exactly what
+      // TaskOwnershipService.releaseTask writes.
+      function isOwnerReleasingTask() {
+        return resource.data.ownerUid == request.auth.uid
+            && request.resource.data.ownerUid == ''
+            && request.resource.data.ownerName == ''
+            && request.resource.data.status == 'notStarted'
+            && changedKeys().hasOnly(['ownerUid', 'ownerName', 'claimedAt', 'status', 'lastUpdatedAt']);
+      }
+
+      // Case 4 — a leader reassigns a task.
       //
       // Also beyond the brief, and included because TaskService.reassignTask
       // already exists and the proposal lists reassignment as a leader power.
