@@ -1,12 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'firebase_options.dart';
 import 'src/modules/common/auth/ui/page/auth_gate.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // The binding is Flutter's connection to the OS. It has to exist before any
+  // plugin is touched, which is why it is created first and then handed to
+  // preserve() below.
+  final binding = WidgetsFlutterBinding.ensureInitialized();
+
+  // Holds the native splash on screen instead of letting it disappear the
+  // instant Flutter is ready to draw. Without this the splash clears while
+  // Firebase is still starting up, leaving a blank screen in the gap.
+  //
+  // On web it does more than that: the web "splash" is ordinary HTML sitting in
+  // web/index.html, and remove() below is the only thing that ever takes it off
+  // the page.
+  FlutterNativeSplash.preserve(widgetsBinding: binding);
+
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
   runApp(const MyApp());
+
+  // Hands the screen over to the app. AuthGate is now mounted and will show its
+  // own loading state while it works out who is signed in.
+  FlutterNativeSplash.remove();
 }
 
 class MyApp extends StatelessWidget {
@@ -16,7 +35,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Synca',
       theme: ThemeData(
         // This is the theme of your application.
         //

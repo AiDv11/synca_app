@@ -1,6 +1,6 @@
 {
-    "name": "synca_app",
-    "short_name": "synca_app",
+    "name": "Synca",
+    "short_name": "Synca",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
