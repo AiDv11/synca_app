@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'package:synca_app/src/core/theme/app_colors.dart';
 
-/// Shows the raw exception from a Firestore stream, with Retry and Copy.
+/// Shown when a screen's data could not be loaded, with a way to try again.
 ///
-/// Deliberately different from `EmptyState`: the text is **selectable** and the
-/// panel **scrolls**, because a Firestore error runs several lines and often
-/// ends in a URL you need to open. A centred, clipped, unselectable paragraph
-/// would hide exactly the part that matters.
+/// The message it displays comes from `describeLoadError`, which is already
+/// plain English — this widget renders whatever it is handed and never
+/// formats an exception itself. Raw error codes and stack traces go to
+/// `debugPrint` in the ViewModel, so the developer keeps them without the
+/// student ever seeing one.
 ///
-/// TODO: remove before submission — this is developer-facing. Students should
-/// see a short friendly message, not an exception. It exists while the task
-/// queries are being debugged.
+/// Kept separate from `EmptyState` because the two mean different things.
+/// Empty is a normal state with nothing to fix; this one is a failure, and the
+/// Retry button is the whole point of it.
 class ErrorState extends StatelessWidget {
   const ErrorState({
     super.key,
@@ -22,7 +22,10 @@ class ErrorState extends StatelessWidget {
   });
 
   final String title;
+
+  /// A short, already-friendly sentence. Not an exception.
   final String message;
+
   final VoidCallback onRetry;
 
   @override
@@ -44,31 +47,22 @@ class ErrorState extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.red.shade100),
-            ),
-            // SelectableText, not Text, so the message can be highlighted and
-            // copied — a Firestore index error hands you a long URL, and
-            // retyping one by hand is miserable.
-            child: SelectableText(
-              message,
-              style: const TextStyle(
-                fontSize: 12,
-                height: 1.5,
-                color: AppColors.charcoal,
-                // Monospace keeps error codes and URLs readable.
-                fontFamily: 'monospace',
-              ),
+          // Plain, centred, unselectable. It used to be monospace inside a
+          // bordered panel, which existed so a developer could read and copy a
+          // multi-line Firestore exception. A one-line apology does not need
+          // any of that.
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              height: 1.4,
+              color: AppColors.charcoal,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
 
           FilledButton(
             onPressed: onRetry,
@@ -81,35 +75,6 @@ class ErrorState extends StatelessWidget {
               ),
             ),
             child: const Text('Retry'),
-          ),
-          const SizedBox(height: 8),
-
-          OutlinedButton.icon(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: message));
-              // `context` is used after an await, so the widget might be gone.
-              // StatelessWidget has no `mounted`, but its BuildContext does.
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Error copied'),
-                  backgroundColor: AppColors.teal,
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-            icon: const Icon(Icons.copy, size: 16),
-            label: const Text('Copy error'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.charcoal,
-              side: BorderSide(
-                color: AppColors.charcoal.withValues(alpha: 0.3),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
           ),
           const SizedBox(height: 16),
         ],

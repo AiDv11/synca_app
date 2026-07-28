@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:synca_app/src/core/constants/task_status.dart';
 import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
+import 'package:synca_app/src/modules/role/member/view_model/load_error_message.dart';
 import 'package:synca_app/src/modules/role/member/view_model/timeline_entry.dart';
 
 /// Builds the member's contribution timeline out of their tasks.
@@ -89,7 +89,10 @@ class TimelineViewModel extends ChangeNotifier {
           },
           onError: (Object error, StackTrace stackTrace) {
             _isLoading = false;
-            _errorMessage = _describeError(error);
+            _errorMessage = describeLoadError(error, subject: 'timeline');
+
+            // The screen gets a plain sentence; the console keeps the code and
+            // the stack trace for whoever is debugging.
             debugPrint('timeline streamTasksForUser failed: $error');
             debugPrintStack(stackTrace: stackTrace);
             notifyListeners();
@@ -218,13 +221,6 @@ class TimelineViewModel extends ChangeNotifier {
     TaskStatus.readyForReview => TimelineEventType.readyForReview,
     TaskStatus.notStarted || TaskStatus.completed => null,
   };
-
-  String _describeError(Object error) {
-    if (error is FirebaseException) {
-      return '[${error.code}]\n\n${error.message ?? error.toString()}';
-    }
-    return error.toString();
-  }
 
   void retry() {
     _subscription?.cancel();

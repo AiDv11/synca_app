@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:synca_app/src/core/constants/task_status.dart';
 import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
+import 'package:synca_app/src/modules/role/member/view_model/load_error_message.dart';
 
 /// State and behaviour for the member's "My Tasks" screen.
 ///
@@ -109,41 +110,19 @@ class MyTasksViewModel extends ChangeNotifier {
           },
           // Errors on a stream arrive through this callback, not as a thrown
           // exception — there is no `try` around a stream that can catch them.
-          //
-          // This used to replace the error with a friendly sentence about the
-          // connection, which was a guess: a permission-denied, a missing
-          // index and a dead network all looked identical on screen. It now
-          // reports what actually happened.
           onError: (Object error, StackTrace stackTrace) {
             _isLoading = false;
-            _errorMessage = _describeError(error);
+            _errorMessage = describeLoadError(error, subject: 'tasks');
 
-            // Also send it to the console, where `flutter run` shows it in
-            // full — including the stack trace, which never belongs on screen.
+            // The screen gets a plain sentence; the console gets the truth.
+            // `flutter run` shows the code, the message and the stack trace,
+            // none of which belong in front of a student.
             debugPrint('streamTasksForUser failed: $error');
             debugPrintStack(stackTrace: stackTrace);
 
             notifyListeners();
           },
         );
-  }
-
-  /// Turns whatever the stream threw into text worth reading.
-  ///
-  /// [FirebaseException] carries a short machine-readable `code` — the part
-  /// that actually identifies the problem, like `permission-denied` or
-  /// `failed-precondition` — alongside a longer human message. Both are shown,
-  /// because the code tells you *which* problem and the message often carries
-  /// the fix (a missing Firestore index arrives with a URL that creates it).
-  ///
-  /// This is a debugging aid, not finished UI. Raw exception text should not
-  /// ship to students in the final build; swap it back for a friendly message
-  /// once the underlying cause is fixed.
-  String _describeError(Object error) {
-    if (error is FirebaseException) {
-      return '[${error.code}]\n\n${error.message ?? error.toString()}';
-    }
-    return error.toString();
   }
 
   /// Drops the failed stream and starts a fresh one, for the Retry button.
