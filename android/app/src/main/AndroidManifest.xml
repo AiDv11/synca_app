@@ -41,5 +41,17 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+
+        <!-- Lets url_launcher open a proof-of-work link in the browser.
+
+             Android 11 and later hide most other apps from an app by default,
+             so without this declaration canLaunchUrl() returns false and the
+             Proof link silently does nothing on a real device. Declaring the
+             https scheme asks only "can anything handle a web link", which is
+             the narrowest question that answers our need. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 </manifest>

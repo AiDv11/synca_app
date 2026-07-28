@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/core/utils/deadline_format.dart';
+import 'package:synca_app/src/modules/role/member/model/proof_link.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/status_chip.dart';
 
 /// One task in a list: title, deadline and status chip, tappable.
@@ -16,11 +17,17 @@ class TaskCard extends StatelessWidget {
     super.key,
     required this.task,
     this.onTap,
+    this.onOpenProof,
     this.trailing,
     this.showStatus = true,
   });
 
   final Task task;
+
+  /// Tapping the proof link. When null the link is not drawn at all, which is
+  /// how the claim sheet keeps its rows to one purpose — an unclaimed task has
+  /// no proof anyway.
+  final VoidCallback? onOpenProof;
 
   /// Null disables the tap and removes the ripple — how the claim sheet greys
   /// the list out while a claim is in flight.
@@ -35,6 +42,10 @@ class TaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOverdue = task.isOverdue;
+
+    // Pulled into a local so Dart's flow analysis promotes it from String? to
+    // String inside the null check below — otherwise every use needs a `!`.
+    final proofUrl = task.proofUrl;
 
     return Material(
       color: Colors.white,
@@ -97,6 +108,55 @@ class TaskCard extends StatelessWidget {
                         ),
                       ],
                     ),
+
+                    // Only drawn when there is proof AND the caller wants it
+                    // tappable. Its own InkWell, nested inside the card's, so a
+                    // tap here opens the link instead of the status picker —
+                    // the innermost gesture detector wins.
+                    if (proofUrl != null && onOpenProof != null) ...[
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: onOpenProof,
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 2,
+                            vertical: 2,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.attach_file,
+                                size: 13,
+                                color: AppColors.teal,
+                              ),
+                              const SizedBox(width: 4),
+                              // Flexible so a long host truncates rather than
+                              // overflowing the card.
+                              Flexible(
+                                child: Text(
+                                  'Proof · ${ProofLink.displayLabel(proofUrl)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.teal,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              const Icon(
+                                Icons.open_in_new,
+                                size: 11,
+                                color: AppColors.teal,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

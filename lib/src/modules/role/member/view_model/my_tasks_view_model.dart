@@ -166,12 +166,27 @@ class MyTasksViewModel extends ChangeNotifier {
   /// write goes to Firestore, Firestore pushes the change back down the stream,
   /// and the listener above updates the UI. One source of truth. Editing the
   /// local list too would briefly show a value the database hadn't accepted.
-  Future<String?> changeStatus(Task task, TaskStatus status) async {
+  /// [proofUrl] is optional and is passed straight through. Null means "leave
+  /// any proof already on the task alone" — `updateStatus` drops the field from
+  /// the write rather than overwriting it with nothing.
+  Future<String?> changeStatus(
+    Task task,
+    TaskStatus status, {
+    String? proofUrl,
+  }) async {
     // Nothing to do, and this avoids a pointless write to Firestore.
-    if (task.status == status) return null;
+    //
+    // The proof check matters: the member may have opened the sheet purely to
+    // attach a link without moving the status, and skipping on status alone
+    // would silently throw that link away.
+    if (task.status == status && proofUrl == null) return null;
 
     try {
-      await _taskService.updateStatus(taskId: task.id, status: status);
+      await _taskService.updateStatus(
+        taskId: task.id,
+        status: status,
+        proofUrl: proofUrl,
+      );
       return null;
     } on FirebaseException catch (e) {
       return e.code == 'permission-denied'

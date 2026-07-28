@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
+import 'package:synca_app/src/modules/role/member/model/proof_link.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/claim_task_sheet.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/empty_state.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/error_state.dart';
@@ -61,14 +62,18 @@ class _MyTasksPageState extends State<MyTasksPage> {
     super.dispose();
   }
 
-  /// Tap a task → pick a status → write it.
+  /// Tap a task → pick a status, and a proof link if it asks for one → write it.
   Future<void> _changeStatus(Task task) async {
-    final status = await showStatusPicker(context: context, task: task);
+    final choice = await showStatusPicker(context: context, task: task);
 
     // Null means they swiped the sheet away without choosing.
-    if (status == null) return;
+    if (choice == null) return;
 
-    final error = await _viewModel.changeStatus(task, status);
+    final error = await _viewModel.changeStatus(
+      task,
+      choice.status,
+      proofUrl: choice.proofUrl,
+    );
 
     // Two awaits have happened, so the screen may be gone. `mounted` is a
     // property of State that flips to false once the widget is removed.
@@ -82,7 +87,27 @@ class _MyTasksPageState extends State<MyTasksPage> {
     // No setState and no manual list update. The write went to Firestore,
     // Firestore pushed it back down the stream, the ViewModel notified, and the
     // list has already redrawn itself by the time this line runs.
-    _showSnackBar('Moved to ${status.label}', isError: false);
+    _showSnackBar(
+      choice.proofUrl != null
+          ? 'Moved to ${choice.status.label}, proof attached'
+          : 'Moved to ${choice.status.label}',
+      isError: false,
+    );
+  }
+
+  /// Opens a task's proof link in the browser.
+  Future<void> _openProof(Task task) async {
+    final url = task.proofUrl;
+    if (url == null) return;
+
+    final opened = await ProofLink.open(url);
+
+    if (!mounted || opened) return;
+
+    // False means nothing on the device could handle the link — a malformed
+    // URL, or no browser installed. Worth saying rather than appearing to do
+    // nothing at all when the member taps.
+    _showSnackBar("Couldn't open that link.");
   }
 
   Future<void> _claimTask() async {
@@ -219,7 +244,11 @@ class _MyTasksPageState extends State<MyTasksPage> {
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final task = tasks[index];
-        return TaskCard(task: task, onTap: () => _changeStatus(task));
+        return TaskCard(
+          task: task,
+          onTap: () => _changeStatus(task),
+          onOpenProof: () => _openProof(task),
+        );
       },
     );
   }
