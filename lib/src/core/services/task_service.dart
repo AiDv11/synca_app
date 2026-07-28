@@ -426,18 +426,43 @@ class TaskService {
         .map(_toTasks);
   }
 
-  /// Every task one member owns, across all their groups, soonest deadline
-  /// first. Feeds a member's "my tasks" list and contribution timeline.
+  /// Every task one member owns **within one group**, soonest deadline first.
+  /// Feeds a member's "my tasks" list and contribution timeline.
   ///
   /// Because unclaimed tasks store [Task.unassigned] (an empty string) rather
   /// than null, they simply never match a real uid — no special case needed.
   ///
-  /// Heads-up: filtering on one field and ordering by another needs a
-  /// **composite index** in Firestore. The first time this runs you'll get a
-  /// `failed-precondition` error in the debug console with a link that creates
-  /// the index for you — click it once and it's done.
-  Stream<List<Task>> streamTasksForUser(String uid) {
+  /// ## Why groupId is here
+  ///
+  /// This used to filter on `ownerUid` alone. The `groupId` filter is not a
+  /// convenience — it is what makes the query legal under `firestore.rules`.
+  ///
+  /// Security rules are not filters. Firestore does not fetch documents and
+  /// quietly drop the ones a rule forbids; it inspects the *query* and refuses
+  /// the whole thing unless the constraints prove every possible result would
+  /// pass. The read rule on `/tasks` requires the caller to be in the task's
+  /// group, so a query that never mentions `groupId` cannot be proven safe and
+  /// comes back `permission-denied` — not empty, denied.
+  ///
+  /// Naming the group in the query is what supplies that proof.
+  ///
+  /// Named parameters rather than two positional strings, because `(uid,
+  /// groupId)` and `(groupId, uid)` are both valid Dart and only one is right.
+  ///
+  /// ## Index
+  ///
+  /// Two equality filters plus a sort on a third field needs a **composite
+  /// index**: `groupId` ascending, then `ownerUid` ascending, then `deadline`
+  /// ascending. The first run without it throws `failed-precondition` with a
+  /// link in the debug console that creates it.
+  ///
+  /// The older `ownerUid` + `deadline` index no longer serves this query.
+  Stream<List<Task>> streamTasksForUser({
+    required String uid,
+    required String groupId,
+  }) {
     return _tasks
+        .where('groupId', isEqualTo: groupId)
         .where('ownerUid', isEqualTo: uid)
         .orderBy('deadline')
         .snapshots()

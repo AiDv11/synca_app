@@ -79,8 +79,27 @@ class MyTasksViewModel extends ChangeNotifier {
 
   /// Opens the live connection and wires incoming tasks into screen state.
   void _subscribe() {
+    // A member who hasn't joined a group has nothing to query, and asking
+    // anyway would be worse than pointless: the query needs a real groupId to
+    // be legal under the Firestore rules, so sending `groupId: ''` would come
+    // back `permission-denied` and the screen would show an error instead of
+    // the perfectly accurate "no tasks yet".
+    //
+    // Falling straight to loaded-and-empty puts the existing empty state on
+    // screen, which already tells them to claim something.
+    if (!user.hasGroup) {
+      _tasks = const [];
+      _isLoading = false;
+      _errorMessage = null;
+      // Harmless in the constructor, where nobody is listening yet, and
+      // necessary on the retry path, where the screen is waiting to be told
+      // the reload finished.
+      notifyListeners();
+      return;
+    }
+
     _subscription = _taskService
-        .streamTasksForUser(user.uid)
+        .streamTasksForUser(uid: user.uid, groupId: user.groupId)
         .listen(
           (tasks) {
             _tasks = tasks;

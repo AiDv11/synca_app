@@ -264,12 +264,27 @@ Verified journey:
 4. Move that task through its statuses to Completed
 5. Timeline renders the created / claimed / completed rows with correct relative times
 
-**Firestore indexes.** Two composite indexes exist on `/tasks`:
+That journey was verified **before** `streamTasksForUser` gained its `groupId` filter
+(see below). The change is small, but the run above no longer matches `main` exactly —
+re-check the Tasks and Timeline tabs once the new index is built.
 
-| Fields | Used by |
-| ------------------- | ---------------------- |
-| `ownerUid`+`deadline` | `streamTasksForUser` |
-| `groupId`+`deadline`  | `streamTasksForGroup` |
+**Firestore indexes** on `/tasks`:
+
+| Fields (in order) | Used by | Exists? |
+| ------------------------------- | ---------------------- | ------------------- |
+| `groupId`+`ownerUid`+`deadline` | `streamTasksForUser`   | **No — must create** |
+| `groupId`+`deadline`            | `streamTasksForGroup`  | Yes |
+| `ownerUid`+`deadline`           | nothing — orphaned     | Yes, safe to delete |
+
+All fields ascending. Equality-filtered fields must come before the `orderBy` field,
+which is why `deadline` is last.
+
+`streamTasksForUser` filters on `groupId` **and** `ownerUid` because Firestore security
+rules are not filters: a query is refused outright unless its constraints prove every
+possible result passes the rule. The `/tasks` read rule requires a group match, so a
+query that never names `groupId` returns `permission-denied` rather than an empty list.
+Until the new index exists, that query throws `failed-precondition` and both tabs show
+their error state.
 
 **Not done yet:**
 

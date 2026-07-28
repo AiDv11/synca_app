@@ -66,8 +66,20 @@ class TimelineViewModel extends ChangeNotifier {
   bool get isEmpty => !_isLoading && _errorMessage == null && _entries.isEmpty;
 
   void _subscribe() {
+    // No group means no legal query — see the matching guard in
+    // `MyTasksViewModel._subscribe`. The timeline falls through to its "No
+    // activity yet" empty state, which is the truth for someone who has not
+    // joined a group and therefore cannot have claimed anything.
+    if (!user.hasGroup) {
+      _entries = const [];
+      _isLoading = false;
+      _errorMessage = null;
+      notifyListeners();
+      return;
+    }
+
     _subscription = _taskService
-        .streamTasksForUser(user.uid)
+        .streamTasksForUser(uid: user.uid, groupId: user.groupId)
         .listen(
           (tasks) {
             _entries = _deriveEntries(tasks);
