@@ -78,10 +78,33 @@ class TimelineViewModel extends ChangeNotifier {
   StreamSubscription<List<Task>>? _subscription;
 
   List<TimelineEntry> _entries = const [];
+
+  /// The ids of tasks the member currently owns.
+  ///
+  /// Kept so a row can ask whether the task behind it is still reachable before
+  /// offering to open it — see [ownsTask].
+  Set<String> _ownedTaskIds = const {};
+
   bool _isLoading = true;
   String? _errorMessage;
 
   List<TimelineEntry> get entries => List.unmodifiable(_entries);
+
+  /// Is the task behind an entry still one of the member's?
+  ///
+  /// The timeline rows use this to decide whether to be tappable: opening a
+  /// detail page for a task that is no longer theirs would land on that page's
+  /// "This task is no longer yours" state, which is a worse answer than the row
+  /// simply not responding.
+  ///
+  /// **It is currently always true for a rendered row, by construction.**
+  /// Entries are derived from the task list on every snapshot, so a released or
+  /// reassigned task does not leave a stranded entry — its entries disappear
+  /// along with it. The guard is here because that is a property of how the
+  /// timeline is *derived*, not a promise: the moment history moves to a
+  /// recorded `activity` subcollection (see the class note), entries will
+  /// outlive their tasks and this becomes load-bearing on the same day.
+  bool ownsTask(String taskId) => _ownedTaskIds.contains(taskId);
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isEmpty => !_isLoading && _errorMessage == null && _entries.isEmpty;
@@ -104,6 +127,9 @@ class TimelineViewModel extends ChangeNotifier {
         .listen(
           (tasks) {
             _entries = _deriveEntries(tasks);
+            // Rebuilt from the same snapshot the entries came from, so the two
+            // can never describe different sets of tasks.
+            _ownedTaskIds = tasks.map((task) => task.id).toSet();
             _isLoading = false;
             _errorMessage = null;
             notifyListeners();
