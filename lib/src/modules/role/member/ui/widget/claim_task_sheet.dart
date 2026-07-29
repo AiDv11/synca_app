@@ -49,6 +49,11 @@ class _ClaimTaskSheetState extends State<_ClaimTaskSheet> {
   /// ViewModel needs `widget.user`, which isn't available until initState.
   late final ClaimTaskViewModel _viewModel;
 
+  /// Holds what the member types. The ViewModel owns the *query*; this owns the
+  /// text field's own state — cursor position, selection — which is why both
+  /// exist rather than one.
+  final _searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -57,9 +62,20 @@ class _ClaimTaskSheetState extends State<_ClaimTaskSheet> {
 
   @override
   void dispose() {
+    // Controllers hold resources that aren't freed automatically.
+    _searchController.dispose();
     // Cancels the group query. Nothing else stops it.
     _viewModel.dispose();
     super.dispose();
+  }
+
+  /// Empties the search from the clear button.
+  ///
+  /// Both halves, and both are needed: the controller so the field goes blank,
+  /// the ViewModel so the list widens again.
+  void _clearSearch() {
+    _searchController.clear();
+    _viewModel.setQuery('');
   }
 
   Future<void> _claim(Task task) async {
@@ -131,18 +147,86 @@ class _ClaimTaskSheetState extends State<_ClaimTaskSheet> {
                 ),
               ),
             ),
-            const Divider(height: 1),
-
             // ListenableBuilder subscribes to the ViewModel and rebuilds this
             // subtree whenever it calls notifyListeners(). Only what's inside
             // the builder rebuilds — the header above is untouched.
+            //
+            // The search field is inside it too, because whether to show the
+            // field at all depends on ViewModel state.
             Expanded(
               child: ListenableBuilder(
                 listenable: _viewModel,
-                builder: (context, _) => _buildBody(),
+                builder: (context, _) => Column(
+                  children: [
+                    _buildSearchField(),
+                    const Divider(height: 1),
+                    Expanded(child: _buildBody()),
+                  ],
+                ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// The search box, or nothing at all.
+  ///
+  /// Hidden when there is nothing to search: no group, still loading, the query
+  /// failed, or the group has no spare tasks. A search field over an empty list
+  /// invites the member to hunt for work that is not there.
+  ///
+  /// It deliberately stays put once a search matches nothing — that is exactly
+  /// the moment they need to edit what they typed.
+  Widget _buildSearchField() {
+    if (_viewModel.hasNoGroup ||
+        _viewModel.isLoading ||
+        _viewModel.errorMessage != null ||
+        _viewModel.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+      child: TextField(
+        controller: _searchController,
+        // No autofocus: opening the sheet should show the tasks, not the
+        // keyboard. The list is the point; searching is the exception.
+        textInputAction: TextInputAction.search,
+        // Straight through on every keystroke. No debounce — see setQuery.
+        onChanged: _viewModel.setQuery,
+        style: const TextStyle(color: AppColors.navy, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Search by title or description',
+          prefixIcon: const Icon(Icons.search, color: AppColors.navy),
+          // Only once there is something to clear, so the field is not
+          // cluttered before it is used.
+          suffixIcon: _viewModel.query.isEmpty
+              ? null
+              : IconButton(
+                  onPressed: _clearSearch,
+                  icon: const Icon(Icons.close, color: AppColors.charcoal),
+                  tooltip: 'Clear search',
+                ),
+          // The same treatment as the group code field and the proof link
+          // field: filled with the light surface, no resting border, teal when
+          // focused.
+          filled: true,
+          fillColor: AppColors.light,
+          isDense: true,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.teal, width: 2),
+          ),
+          hintStyle: TextStyle(
+            color: AppColors.charcoal.withValues(alpha: 0.6),
+            fontSize: 14,
+          ),
         ),
       ),
     );
@@ -171,6 +255,7 @@ class _ClaimTaskSheetState extends State<_ClaimTaskSheet> {
       );
     }
 
+    // Two different nothings. This one is "the group has no spare work".
     if (_viewModel.isEmpty) {
       return const _SheetMessage(
         icon: Icons.inbox_outlined,
@@ -180,7 +265,18 @@ class _ClaimTaskSheetState extends State<_ClaimTaskSheet> {
       );
     }
 
-    final tasks = _viewModel.unclaimedTasks;
+    // And this one is "there is spare work, but not by that name" — which is a
+    // prompt to retype, not a reason to give up.
+    if (_viewModel.hasNoMatches) {
+      return _SheetMessage(
+        icon: Icons.search_off,
+        message:
+            'Nothing matches "${_viewModel.query.trim()}".\n'
+            'Try fewer words, or clear the search to see everything.',
+      );
+    }
+
+    final tasks = _viewModel.visibleTasks;
 
     // ListView.builder only builds the rows actually on screen, rather than all
     // of them up front. Overkill for five tasks, but it's the habit to have.

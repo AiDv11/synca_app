@@ -40,8 +40,57 @@ class ClaimTaskViewModel extends ChangeNotifier {
   bool _isClaiming = false;
   String? _errorMessage;
 
+  /// What the member has typed into the search field. Empty means no search.
+  String _query = '';
+
   /// Tasks in the group that nobody owns yet, soonest deadline first.
+  ///
+  /// **Unsearched.** The list on screen is [visibleTasks]; this is the full set,
+  /// and it is what [isEmpty] asks about.
   List<Task> get unclaimedTasks => List.unmodifiable(_unclaimedTasks);
+
+  String get query => _query;
+
+  /// [unclaimedTasks] narrowed by [query], matching title and description.
+  ///
+  /// In memory, over tasks already streamed. Firestore has no substring search
+  /// at all — matching "review" against a title needs either an exact-prefix
+  /// range query, which would miss anything not at the start, or a third-party
+  /// index like Algolia. Neither is worth it for a group with tens of tasks
+  /// that are already on the device.
+  ///
+  /// Case-insensitive on both sides, so typing `lit` finds "Literature review".
+  /// The description is searched as well as the title because a task's title is
+  /// often terse — "Section 3" — while the thing the member remembers about it
+  /// lives in the description.
+  ///
+  /// Computed on demand rather than stored: a cached copy would need rebuilding
+  /// whenever either the stream or the query changed, and the day one is missed
+  /// the sheet shows the wrong rows.
+  List<Task> get visibleTasks {
+    final needle = _query.trim().toLowerCase();
+    if (needle.isEmpty) return unclaimedTasks;
+
+    return List.unmodifiable(
+      _unclaimedTasks.where(
+        (task) =>
+            task.title.toLowerCase().contains(needle) ||
+            task.description.toLowerCase().contains(needle),
+      ),
+    );
+  }
+
+  /// Updates the search. No Firestore call — this narrows what is already held.
+  ///
+  /// No debouncing, deliberately. Debouncing exists to avoid hammering a
+  /// network or re-running expensive work per keystroke; this is one pass over
+  /// a handful of objects already in memory, and a delay would only make the
+  /// list feel like it was lagging behind the typing.
+  void setQuery(String value) {
+    if (value == _query) return;
+    _query = value;
+    notifyListeners();
+  }
 
   bool get isLoading => _isLoading;
 
@@ -55,8 +104,26 @@ class ClaimTaskViewModel extends ChangeNotifier {
   /// "the group has no spare tasks", and it needs different wording.
   bool get hasNoGroup => !user.hasGroup;
 
+  /// The group has no spare work at all.
+  ///
+  /// Deliberately about [unclaimedTasks], not [visibleTasks]: this is "there is
+  /// nothing to claim", which is a different message from "your search found
+  /// nothing". See [hasNoMatches].
   bool get isEmpty =>
       !_isLoading && _errorMessage == null && _unclaimedTasks.isEmpty;
+
+  /// There is unclaimed work, but the search does not match any of it.
+  ///
+  /// Split from [isEmpty] so the two can say different things. Told apart, one
+  /// says the group has nothing spare and the other says to try different
+  /// words; merged, whichever wording won would be wrong half the time — and
+  /// the wrong one here would have a member believe there is no work left when
+  /// they have simply mistyped.
+  bool get hasNoMatches =>
+      !_isLoading &&
+      _errorMessage == null &&
+      _unclaimedTasks.isNotEmpty &&
+      visibleTasks.isEmpty;
 
   void _subscribe() {
     _subscription = _taskService
