@@ -6,8 +6,7 @@ import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 ///
 /// Lives in the leader module because only the leader screens need a live
 /// member list (the summary card's count, the Members tab, and the reassign
-/// picker). The member module's [GroupService] only writes a groupId onto a
-/// profile — it never lists anyone.
+/// picker).
 ///
 /// ## Why a query on `/users`
 ///
@@ -18,8 +17,13 @@ import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 ///
 /// That query is legal under `firestore.rules`: a signed-in caller may read
 /// profiles in their own group, and naming `groupId` in the filter is what
-/// proves every result would pass. An unfiltered `users` collection get is
-/// refused outright.
+/// proves every result would pass.
+///
+/// ## Why there is no `orderBy`
+///
+/// A `where` on `groupId` plus `orderBy('name')` needs a composite index.
+/// The member module already avoids that by sorting on the device. We do the
+/// same here so a missing index cannot blank every leader screen.
 class GroupMembersService {
   GroupMembersService({FirebaseFirestore? firestore})
     : _firestore = firestore ?? FirebaseFirestore.instance;
@@ -29,23 +33,18 @@ class GroupMembersService {
   CollectionReference<Map<String, dynamic>> get _users =>
       _firestore.collection('users');
 
-  /// Everyone currently in [groupId], updating live.
-  ///
-  /// Ordered by name so the Members tab and the reassign picker stay stable
-  /// as people join and leave — without a sort, Firestore returns documents in
-  /// document-id order, which looks random on screen.
-  ///
-  /// A single-field equality filter plus an `orderBy` on a different field
-  /// needs a composite index (`groupId` Asc, `name` Asc). The first run without
-  /// it throws `failed-precondition` with a console link that creates it.
+  /// Everyone currently in [groupId], updating live, sorted by name in memory.
   Stream<List<AppUser>> streamMembersForGroup(String groupId) {
-    return _users
-        .where('groupId', isEqualTo: groupId)
-        .orderBy('name')
-        .snapshots()
-        .map(
-          (snapshot) =>
-              snapshot.docs.map((doc) => AppUser.fromMap(doc.data())).toList(),
-        );
+    return _users.where('groupId', isEqualTo: groupId).snapshots().map((
+      snapshot,
+    ) {
+      final members = snapshot.docs
+          .map((doc) => AppUser.fromMap(doc.data()))
+          .toList();
+      members.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+      return members;
+    });
   }
 }

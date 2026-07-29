@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 import 'package:synca_app/src/modules/role/leader/ui/widget/add_task_sheet.dart';
+import 'package:synca_app/src/modules/role/leader/ui/widget/join_group_panel.dart';
 import 'package:synca_app/src/modules/role/leader/ui/widget/leader_states.dart';
 import 'package:synca_app/src/modules/role/leader/ui/widget/reassign_task_sheet.dart';
 import 'package:synca_app/src/modules/role/leader/ui/widget/summary_card.dart';
@@ -15,9 +16,16 @@ import 'package:synca_app/src/modules/role/leader/view_model/team_dashboard_view
 /// The bottom nav lives in [LeaderDashboard]; this page is only the body of
 /// the Dashboard tab.
 class TeamDashboardPage extends StatefulWidget {
-  const TeamDashboardPage({super.key, required this.user});
+  const TeamDashboardPage({
+    super.key,
+    required this.user,
+    required this.onGroupChanged,
+  });
 
   final AppUser user;
+
+  /// Fired after the leader joins a group from the empty-state form.
+  final ValueChanged<String> onGroupChanged;
 
   @override
   State<TeamDashboardPage> createState() => _TeamDashboardPageState();
@@ -74,12 +82,18 @@ class _TeamDashboardPageState extends State<TeamDashboardPage> {
   @override
   Widget build(BuildContext context) {
     if (!widget.user.hasGroup) {
-      return const LeaderEmptyState(
-        icon: Icons.groups_outlined,
-        title: 'No group yet',
-        message:
-            'Your account is not linked to a group.\n'
-            'Ask your teammate to set a groupId on your profile.',
+      return JoinGroupPanel(
+        user: widget.user,
+        onJoined: (code) {
+          widget.onGroupChanged(code);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Joined $code'),
+              backgroundColor: AppColors.teal,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
       );
     }
 

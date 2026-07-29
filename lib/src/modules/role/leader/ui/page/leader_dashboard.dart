@@ -10,17 +10,8 @@ import 'package:synca_app/src/modules/role/leader/ui/page/team_dashboard_page.da
 /// Home shell for a Group Leader.
 ///
 /// Owns the bottom navigation (Dashboard / Tasks / Members / Profile) and
-/// nothing else — each tab is its own page. Mirrors [MemberDashboard]'s shape
-/// so the three role shells stay recognisable to anyone reading the code.
-///
-/// ## Why this loads the user itself
-///
-/// `AuthGate` currently builds `const LeaderDashboard()` with no profile
-/// handed down (unlike the member path, which passes `AppUser`). Changing the
-/// gate would mean editing `modules/common/`, which Ali asked us not to touch.
-/// So this shell fetches the signed-in profile once via [AuthService] and then
-/// builds the tabs. One extra Firestore read on leader login; no shared-code
-/// edit.
+/// holds a mutable [AppUser] so joining a group updates every tab without
+/// restarting the app (same pattern as [MemberDashboard]).
 class LeaderDashboard extends StatefulWidget {
   const LeaderDashboard({super.key});
 
@@ -32,6 +23,7 @@ class _LeaderDashboardState extends State<LeaderDashboard> {
   final _authService = AuthService();
 
   late Future<AppUser?> _profileFuture;
+  AppUser? _user;
   int _selectedIndex = 0;
 
   static const List<String> _titles = [
@@ -49,18 +41,36 @@ class _LeaderDashboardState extends State<LeaderDashboard> {
 
   void _retry() {
     setState(() {
+      _user = null;
       _profileFuture = _authService.getCurrentUser();
     });
   }
 
   void _showTab(int index) => setState(() => _selectedIndex = index);
 
+  /// Rebuilds the shell with the new group id after a successful join.
+  void _handleGroupChanged(String groupId) {
+    final current = _user;
+    if (current == null) return;
+    setState(() {
+      _user = AppUser(
+        uid: current.uid,
+        email: current.email,
+        name: current.name,
+        role: current.role,
+        groupId: groupId,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<AppUser?>(
       future: _profileFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            _user == null &&
+            !snapshot.hasData) {
           return const Scaffold(
             backgroundColor: AppColors.light,
             body: Center(
@@ -69,7 +79,9 @@ class _LeaderDashboardState extends State<LeaderDashboard> {
           );
         }
 
-        if (snapshot.hasError || snapshot.data == null) {
+        final user = _user ?? snapshot.data;
+
+        if (user == null) {
           return Scaffold(
             backgroundColor: AppColors.light,
             body: Center(
@@ -113,8 +125,6 @@ class _LeaderDashboardState extends State<LeaderDashboard> {
           );
         }
 
-        final user = snapshot.data!;
-
         return Scaffold(
           backgroundColor: AppColors.light,
           appBar: AppBar(
@@ -124,14 +134,24 @@ class _LeaderDashboardState extends State<LeaderDashboard> {
             scrolledUnderElevation: 0,
           ),
           body: SafeArea(
-            // IndexedStack keeps all four tabs alive so switching away and
-            // back does not tear down Firestore streams or lose scroll.
             child: IndexedStack(
               index: _selectedIndex,
               children: [
-                TeamDashboardPage(user: user),
-                LeaderTasksPage(user: user),
-                MembersPage(user: user),
+                // ValueKey forces a fresh page (and fresh streams) when the
+                // group id changes after join.
+                TeamDashboardPage(
+                  key: ValueKey('dash-${user.groupId}'),
+                  user: user,
+                  onGroupChanged: _handleGroupChanged,
+                ),
+                LeaderTasksPage(
+                  key: ValueKey('tasks-${user.groupId}'),
+                  user: user,
+                ),
+                MembersPage(
+                  key: ValueKey('members-${user.groupId}'),
+                  user: user,
+                ),
                 _LeaderProfileTab(user: user),
               ],
             ),
