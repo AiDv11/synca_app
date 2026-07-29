@@ -95,7 +95,7 @@ class _GroupPageState extends State<GroupPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? Colors.red.shade700 : AppColors.teal,
+        backgroundColor: isError ? AppColors.danger : AppColors.teal,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -327,7 +327,7 @@ class _GroupPageState extends State<GroupPage> {
         OutlinedButton(
           onPressed: isBusy ? null : _leave,
           style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.red.shade700,
+            foregroundColor: AppColors.danger,
             side: BorderSide(color: Colors.red.shade200),
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(
@@ -380,12 +380,12 @@ class _ErrorBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.error_outline, size: 18, color: Colors.red.shade700),
+          Icon(Icons.error_outline, size: 18, color: AppColors.danger),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: TextStyle(fontSize: 13, color: Colors.red.shade700),
+              style: TextStyle(fontSize: 13, color: AppColors.danger),
             ),
           ),
         ],

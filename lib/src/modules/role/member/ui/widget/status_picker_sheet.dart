@@ -75,9 +75,16 @@ final class ReleaseChoice extends TaskSheetResult {
 /// `isScrollControlled` and the `viewInsets` padding inside are what let the
 /// sheet rise above the on-screen keyboard when the proof field has focus.
 /// Without them the keyboard covers the very field being typed into.
+///
+/// [startOnProofEdit] opens straight on the link field instead of the status
+/// list, for the detail page's "Edit proof" button. It exists so that button
+/// can reuse this sheet rather than growing its own copy of the field, the
+/// validation and the remove flow. Ignored when the task has no proof to edit,
+/// because the step would have nothing to show.
 Future<TaskSheetResult?> showStatusPicker({
   required BuildContext context,
   required Task task,
+  bool startOnProofEdit = false,
 }) {
   return showModalBottomSheet<TaskSheetResult>(
     context: context,
@@ -86,7 +93,8 @@ Future<TaskSheetResult?> showStatusPicker({
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (context) => _StatusPickerSheet(task: task),
+    builder: (context) =>
+        _StatusPickerSheet(task: task, startOnProofEdit: startOnProofEdit),
   );
 }
 
@@ -98,9 +106,12 @@ Future<TaskSheetResult?> showStatusPicker({
 /// closing. That keeps the common case one tap while asking for proof exactly
 /// when it is relevant.
 class _StatusPickerSheet extends StatefulWidget {
-  const _StatusPickerSheet({required this.task});
+  const _StatusPickerSheet({required this.task, required this.startOnProofEdit});
 
   final Task task;
+
+  /// Skip the status list and open the link field directly.
+  final bool startOnProofEdit;
 
   @override
   State<_StatusPickerSheet> createState() => _StatusPickerSheetState();
@@ -139,6 +150,27 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
     // with nothing.
     final existing = widget.task.proofUrl;
     if (ProofLink.hasProof(existing)) _proofController.text = existing!;
+
+    // Opening straight on the link field, for the detail page's "Edit proof"
+    // button. Gated on there actually being a link: without one the step has
+    // nothing to edit, and the member would land on an empty field with a Save
+    // button that refuses to do anything.
+    _editingProof =
+        widget.startOnProofEdit && ProofLink.hasProof(existing);
+  }
+
+  /// Leaves the proof-edit step.
+  ///
+  /// Where "back" goes depends on how the member got here. Arriving from the
+  /// status list, back means that list. Arriving straight from the detail
+  /// page's "Edit proof" button, there is no list behind this step, and
+  /// revealing one would be a surprise — so back closes the sheet.
+  void _leaveProofEdit() {
+    if (widget.startOnProofEdit) {
+      Navigator.of(context).pop();
+      return;
+    }
+    _backToList();
   }
 
   @override
@@ -420,7 +452,7 @@ class _StatusPickerSheetState extends State<_StatusPickerSheet> {
         child: Row(
           children: [
             TextButton(
-              onPressed: _backToList,
+              onPressed: _leaveProofEdit,
               style: TextButton.styleFrom(foregroundColor: AppColors.charcoal),
               child: const Text('Back'),
             ),

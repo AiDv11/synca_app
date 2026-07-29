@@ -339,7 +339,7 @@ class _ProfileTabState extends State<_ProfileTab> {
           icon: const Icon(Icons.logout),
           label: const Text('Log out'),
           style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.red.shade700,
+            foregroundColor: AppColors.danger,
             side: BorderSide(color: Colors.red.shade200),
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(

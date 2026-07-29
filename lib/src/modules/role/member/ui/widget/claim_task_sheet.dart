@@ -73,7 +73,7 @@ class _ClaimTaskSheetState extends State<_ClaimTaskSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error),
-          backgroundColor: Colors.red.shade700,
+          backgroundColor: AppColors.danger,
           behavior: SnackBarBehavior.floating,
         ),
       );

@@ -3,16 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:synca_app/src/core/services/task_service.dart';
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
-import 'package:synca_app/src/modules/role/member/model/proof_link.dart';
+import 'package:synca_app/src/modules/role/member/ui/page/task_detail_page.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/claim_task_sheet.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/empty_state.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/error_state.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/progress_card.dart';
-import 'package:synca_app/src/modules/role/member/ui/widget/release_task_dialog.dart';
-import 'package:synca_app/src/modules/role/member/ui/widget/remove_proof_dialog.dart';
-import 'package:synca_app/src/modules/role/member/ui/widget/status_picker_sheet.dart';
+import 'package:synca_app/src/modules/role/member/ui/widget/task_actions.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/task_card.dart';
+import 'package:synca_app/src/modules/role/member/ui/widget/task_filter_chips.dart';
 import 'package:synca_app/src/modules/role/member/view_model/my_tasks_view_model.dart';
+import 'package:synca_app/src/modules/role/member/view_model/task_filter.dart';
 
 /// The Tasks tab: my progress, my claimed tasks, and a way to claim more.
 ///
@@ -64,132 +64,22 @@ class _MyTasksPageState extends State<MyTasksPage> {
     super.dispose();
   }
 
-  /// Tap a task → the sheet offers a status change or a release → act on it.
+  /// Tap a task → open its detail page.
   ///
-  /// The `switch` is exhaustive because [TaskSheetResult] is sealed: there is
-  /// no `default`, and adding a third action to the sheet would stop this
-  /// compiling until it is handled here too.
-  Future<void> _openTaskSheet(Task task) async {
-    final result = await showStatusPicker(context: context, task: task);
-
-    // An await happened, so the page may be gone; null means they swiped the
-    // sheet away without choosing.
-    if (!mounted || result == null) return;
-
-    switch (result) {
-      case StatusChoice():
-        await _changeStatus(task, result);
-      case ProofChoice():
-        await _updateProof(task, result);
-      case ReleaseChoice():
-        await _releaseTask(task);
-    }
-  }
-
-  /// Saves an edited proof link, or removes it after confirming.
+  /// The row used to open the status sheet directly. It now opens the page, and
+  /// the sheet lives behind a button there: a tap on a list row should show you
+  /// the thing, not immediately ask you to change it.
   ///
-  /// Only the removal asks. Replacing a link is an ordinary correction and
-  /// stopping to confirm it would make fixing a typo cost two taps for nothing.
-  Future<void> _updateProof(Task task, ProofChoice choice) async {
-    if (choice.isRemoval) {
-      final confirmed = await showRemoveProofDialog(
-        context: context,
-        task: task,
-      );
-
-      // `!= true` rather than `== false`, because dismissing the dialog by
-      // tapping outside it returns null.
-      if (!mounted || confirmed != true) return;
-    }
-
-    final error = await _viewModel.updateProof(task, choice.proofUrl);
-
-    if (!mounted) return;
-
-    if (error != null) {
-      _showSnackBar(error);
-      return;
-    }
-
-    _showSnackBar(
-      choice.isRemoval ? 'Proof removed' : 'Proof link updated',
-      isError: false,
+  /// The route is handed the ViewModel and the task's **id**, never the [Task]
+  /// itself — see the note on [TaskDetailPage] for why a snapshot would go
+  /// stale. `MyTasksPage` stays mounted underneath, so the ViewModel it owns
+  /// outlives the pushed route.
+  void _openTaskDetail(Task task) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TaskDetailPage(viewModel: _viewModel, taskId: task.id),
+      ),
     );
-  }
-
-  /// Writes the status the member picked, and any proof they attached.
-  Future<void> _changeStatus(Task task, StatusChoice choice) async {
-    final error = await _viewModel.changeStatus(
-      task,
-      choice.status,
-      proofUrl: choice.proofUrl,
-    );
-
-    // An await has happened, so the screen may be gone. `mounted` is a
-    // property of State that flips to false once the widget is removed.
-    if (!mounted) return;
-
-    if (error != null) {
-      _showSnackBar(error);
-      return;
-    }
-
-    // No setState and no manual list update. The write went to Firestore,
-    // Firestore pushed it back down the stream, the ViewModel notified, and the
-    // list has already redrawn itself by the time this line runs.
-    _showSnackBar(
-      choice.proofUrl != null
-          ? 'Moved to ${choice.status.label}, proof attached'
-          : 'Moved to ${choice.status.label}',
-      isError: false,
-    );
-  }
-
-  /// Confirms, then hands the task back to the group.
-  ///
-  /// The confirmation lives here rather than inside the sheet so the sheet is
-  /// already closed when the dialog appears — a dialog stacked on a bottom
-  /// sheet leaves two things to dismiss and makes Cancel ambiguous.
-  Future<void> _releaseTask(Task task) async {
-    final confirmed = await showReleaseTaskDialog(context: context, task: task);
-
-    // `!= true` rather than `== false`, because dismissing the dialog by
-    // tapping outside it returns null. Only an explicit Release goes on.
-    if (!mounted || confirmed != true) return;
-
-    final error = await _viewModel.releaseTask(task);
-
-    if (!mounted) return;
-
-    if (error != null) {
-      _showSnackBar(error);
-      return;
-    }
-
-    // Nothing to remove from the list by hand: the task no longer matches
-    // "owned by me", so Firestore has already dropped it from the stream and
-    // the row is gone.
-    _showSnackBar('Released "${task.title}"', isError: false);
-  }
-
-  /// Opens a task's proof link in the browser.
-  Future<void> _openProof(Task task) async {
-    final url = task.proofUrl;
-
-    // `hasProof`, not a null check: a task whose proof was removed holds an
-    // empty string, and there is nothing to open. The `!` is safe because of
-    // it — but Dart's flow analysis cannot see inside the helper, so it has to
-    // be written out.
-    if (!ProofLink.hasProof(url)) return;
-
-    final opened = await ProofLink.open(url!);
-
-    if (!mounted || opened) return;
-
-    // False means nothing on the device could handle the link — a malformed
-    // URL, or no browser installed. Worth saying rather than appearing to do
-    // nothing at all when the member taps.
-    _showSnackBar("Couldn't open that link.");
   }
 
   Future<void> _claimTask() async {
@@ -200,17 +90,9 @@ class _MyTasksPageState extends State<MyTasksPage> {
 
     if (!mounted || claimedTitle == null) return;
 
-    _showSnackBar('Claimed "$claimedTitle"', isError: false);
-  }
-
-  void _showSnackBar(String message, {bool isError = true}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red.shade700 : AppColors.teal,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    // The shared styling from task_actions.dart, so every message this module
+    // shows looks the same.
+    showTaskSnackBar(context, 'Claimed "$claimedTitle"', isError: false);
   }
 
   @override
@@ -252,6 +134,19 @@ class _MyTasksPageState extends State<MyTasksPage> {
               ),
             ),
 
+            // Hidden while loading, on an error, and when the member owns
+            // nothing at all. Five filter chips over an empty list would be
+            // offering to narrow down nothing.
+            if (!_viewModel.isLoading &&
+                _viewModel.errorMessage == null &&
+                !_viewModel.isEmpty) ...[
+              TaskFilterChips(
+                selected: _viewModel.filter,
+                onSelected: _viewModel.setFilter,
+              ),
+              const SizedBox(height: 12),
+            ],
+
             // Expanded gives the list all the leftover vertical space. A
             // ListView inside a Column without it throws an unbounded-height
             // error — one of the first Flutter errors everyone meets.
@@ -291,7 +186,7 @@ class _MyTasksPageState extends State<MyTasksPage> {
     );
   }
 
-  /// Picks one of four bodies. Order matters: loading is checked before error,
+  /// Picks one of five bodies. Order matters: loading is checked before error,
   /// error before empty, and the real list last.
   Widget _buildTaskList() {
     if (_viewModel.isLoading) {
@@ -308,17 +203,29 @@ class _MyTasksPageState extends State<MyTasksPage> {
       );
     }
 
+    // Two different nothings, and they say different things. This one is "you
+    // have claimed nothing" — the wording comes from TaskFilter.all, which is
+    // the original copy, kept there so both empty states live side by side.
     if (_viewModel.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.task_alt,
-        title: 'No tasks yet',
-        message:
-            "You haven't claimed anything.\n"
-            'Tap "Claim a Task" to pick one up.',
+        title: TaskFilter.all.emptyTitle,
+        message: TaskFilter.all.emptyMessage,
       );
     }
 
-    final tasks = _viewModel.tasks;
+    // And this one is "you have tasks, just none in this pile".
+    if (_viewModel.hasNoMatches) {
+      return EmptyState(
+        // A filter, not a void: the icon says the list was narrowed rather than
+        // that there is nothing to do.
+        icon: Icons.filter_alt_outlined,
+        title: _viewModel.filter.emptyTitle,
+        message: _viewModel.filter.emptyMessage,
+      );
+    }
+
+    final tasks = _viewModel.visibleTasks;
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -328,8 +235,11 @@ class _MyTasksPageState extends State<MyTasksPage> {
         final task = tasks[index];
         return TaskCard(
           task: task,
-          onTap: () => _openTaskSheet(task),
-          onOpenProof: () => _openProof(task),
+          onTap: () => _openTaskDetail(task),
+          // The proof link stays tappable on the row itself. Its own InkWell,
+          // nested inside the card's, so tapping the link opens the link while
+          // tapping anywhere else opens the detail page.
+          onOpenProof: () => openProofLink(context, task),
         );
       },
     );

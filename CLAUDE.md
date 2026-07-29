@@ -270,15 +270,22 @@ Verified journey:
 3. Claim a task from the claim sheet
 4. Move that task through its statuses to Completed
 5. Timeline renders the created / claimed / completed rows with correct relative times
+6. Release a claimed task — it leaves My Tasks and reappears in the claim sheet
 
 **Re-verified against the deployed rules.** After `firestore.rules` went live and
 `streamTasksForUser` gained its `groupId` filter, the whole journey was run again in
 Chrome — Tasks, Timeline, Group tab, claim sheet and status changes all work under the
 live rules. Nothing here is pending re-checking.
 
-**Firestore rules are DEPLOYED.** `firestore.rules` is no longer a draft; it is what the
-live database enforces. Change it and the app's behaviour changes, so treat any edit as
-a production change and re-test the member journey afterwards.
+**Firestore rules are DEPLOYED, and the file matches the live database.**
+`firestore.rules` is not a draft; every rule in it is what the live database enforces —
+including `isOwnerReleasingTask()` (Case 3 under `/tasks`), which was published and
+confirmed working in the app: releasing a task drops it straight back into the claim
+sheet. Nothing in the file is waiting to be deployed.
+
+Change it and the app's behaviour changes, so treat any edit as a production change:
+publish it and re-test the member journey afterwards, and do not leave the file and the
+console out of step in between.
 
 A consequence to remember: the Module Coordinator can now read nothing at all. That is
 the proposal's privacy rule working as intended, but it means the coordinator dashboard

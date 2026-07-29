@@ -9,6 +9,7 @@ import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 import 'package:synca_app/src/modules/role/member/model/services/task_ownership_service.dart';
 import 'package:synca_app/src/modules/role/member/model/services/task_proof_service.dart';
 import 'package:synca_app/src/modules/role/member/view_model/load_error_message.dart';
+import 'package:synca_app/src/modules/role/member/view_model/task_filter.dart';
 
 /// State and behaviour for the member's "My Tasks" screen.
 ///
@@ -58,11 +59,45 @@ class MyTasksViewModel extends ChangeNotifier {
   bool _isLoading = true;
   String? _errorMessage;
 
+  /// Which chip is selected above the list.
+  ///
+  /// Held here, not in the widget, and that is what makes it survive: the Tasks
+  /// page pushes a task detail route over itself, and state kept in a `State`
+  /// object would be fine — but state kept in the ViewModel is also unaffected
+  /// by the page being rebuilt for any other reason. Coming back from a detail
+  /// page lands on the same filter the member left.
+  TaskFilter _filter = TaskFilter.all;
+
   /// The fields above are private (`_`) and exposed through getters, so the
   /// View can read state but can't reach in and change it. Every change goes
   /// through a method on this class, which is what keeps [notifyListeners]
   /// from being forgotten.
+  ///
+  /// **Every task the member owns**, unfiltered. The contribution card counts
+  /// from this — see [totalCount].
   List<Task> get tasks => List.unmodifiable(_tasks);
+
+  TaskFilter get filter => _filter;
+
+  /// The tasks the list should draw: [tasks] with [filter] applied.
+  ///
+  /// Computed on demand rather than stored in its own field, for the same
+  /// reason the counts below are: a stored copy has to be rebuilt whenever
+  /// either the stream or the filter changes, and the day somebody forgets one
+  /// of those, the list quietly shows the wrong thing.
+  ///
+  /// The work is a single pass over a handful of tasks, on a list that only
+  /// changes when Firestore pushes or a chip is tapped. There is nothing here
+  /// worth caching.
+  List<Task> get visibleTasks =>
+      List.unmodifiable(_tasks.where(_filter.matches));
+
+  /// Switches the chip. No Firestore call — this filters what is already held.
+  void setFilter(TaskFilter filter) {
+    if (filter == _filter) return;
+    _filter = filter;
+    notifyListeners();
+  }
 
   /// True until the very first batch of tasks arrives.
   bool get isLoading => _isLoading;
@@ -71,8 +106,49 @@ class MyTasksViewModel extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   /// Loaded fine, no error, but this member owns nothing yet.
+  ///
+  /// Deliberately about [tasks], not [visibleTasks] — this is "you have not
+  /// claimed anything", a different screen from "this filter matches nothing".
+  /// See [hasNoMatches].
   bool get isEmpty => !_isLoading && _errorMessage == null && _tasks.isEmpty;
 
+  /// The member owns tasks, but none survive the current filter.
+  ///
+  /// Split from [isEmpty] so the two can say different things. Apart, one
+  /// invites the member to claim work and the other says the pile they picked
+  /// is empty; merged, whichever wording won would be wrong half the time.
+  bool get hasNoMatches =>
+      !_isLoading &&
+      _errorMessage == null &&
+      _tasks.isNotEmpty &&
+      visibleTasks.isEmpty;
+
+  /// One task by id, or null if it is no longer in the member's list.
+  ///
+  /// This is what lets the detail page stay live without opening a second
+  /// Firestore listener. It reads out of the same `_tasks` the stream fills, so
+  /// a change made on another device redraws the detail page and the list
+  /// together, from one snapshot.
+  ///
+  /// **Null is a normal answer**, not an error, and the detail page has to
+  /// handle it: the task is gone the moment it stops matching "owned by me" —
+  /// released, reassigned by the leader, or the member left the group.
+  ///
+  /// A plain loop rather than `firstWhere`, which throws when nothing matches
+  /// and whose `orElse` would need a fake Task to return.
+  Task? taskById(String id) {
+    for (final task in _tasks) {
+      if (task.id == id) return task;
+    }
+    return null;
+  }
+
+  /// The three values below count **all** tasks, never the filtered list.
+  ///
+  /// The contribution card measures how much of the member's work is done — a
+  /// fact about the project, not about what happens to be on screen. A progress
+  /// bar that jumped to 100% because somebody tapped "Completed" would be worse
+  /// than no progress bar at all.
   int get totalCount => _tasks.length;
 
   int get completedCount => _tasks.where((task) => task.status.isDone).length;
@@ -227,11 +303,8 @@ class MyTasksViewModel extends ChangeNotifier {
   /// released task stops matching `ownerUid == me`, so Firestore drops it from
   /// the stream and the row disappears on its own.
   ///
-  /// > **Expect this to fail against the deployed rules.** The `/tasks` update
-  /// > rule has no clause permitting a member to clear `ownerUid`, so the write
-  /// > comes back `permission-denied` until `firestore.rules` gains one. The
-  /// > message for that code below is written to be honest about it rather than
-  /// > blaming the member for something they did nothing wrong to trigger.
+  /// Permitted by the deployed rules through `isOwnerReleasingTask()`, and
+  /// confirmed working: the released task reappears in the claim sheet.
   Future<String?> releaseTask(Task task) async {
     // Checked here as well as in the service and the rules. This one is not
     // about security — it is about not sending a write that is certain to be
@@ -250,11 +323,15 @@ class MyTasksViewModel extends ChangeNotifier {
       return e.message;
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
+        // The rule permits this write, so reaching here means the request no
+        // longer fits it — most likely the task moved out of the member's
+        // group, or isOwnerReleasingTask and the service disagree about which
+        // fields are written.
         debugPrint(
-          'releaseTask refused: the /tasks update rule has no release clause. '
-          'See firestore.rules.',
+          'releaseTask refused: the write no longer matches '
+          'isOwnerReleasingTask in firestore.rules. [${e.code}] ${e.message}',
         );
-        return 'Releasing tasks is not switched on for this project yet.';
+        return "You don't have permission to release that task.";
       }
       return "Couldn't release the task. Please try again.";
     } catch (error) {

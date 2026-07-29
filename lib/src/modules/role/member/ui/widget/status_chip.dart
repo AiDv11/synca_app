@@ -29,12 +29,18 @@ class StatusChip extends StatelessWidget {
   /// A `switch` expression over an enum has to cover every value, so adding a
   /// fifth status later becomes a compile error here rather than a chip that
   /// silently renders in the wrong colour.
-  Color get _colour => switch (status) {
+  ///
+  /// Public and static so the filter chips above the task list can tint
+  /// themselves from the same mapping. A second copy is how a filter labelled
+  /// "In progress" ends up a different blue from the chips it filters.
+  static Color colourFor(TaskStatus status) => switch (status) {
     TaskStatus.notStarted => AppColors.charcoal,
     TaskStatus.inProgress => AppColors.skyBlue,
     TaskStatus.readyForReview => AppColors.navy,
     TaskStatus.completed => AppColors.teal,
   };
+
+  Color get _colour => colourFor(status);
 
   @override
   Widget build(BuildContext context) {

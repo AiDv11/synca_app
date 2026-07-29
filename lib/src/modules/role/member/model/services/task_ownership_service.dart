@@ -11,12 +11,12 @@ import 'package:synca_app/src/core/services/task_service.dart';
 /// `core/services/task_service.dart` next to `claimTask` and `reassignTask` —
 /// two files writing to `/tasks` is a seam, and the tidy version has one.
 ///
-/// > **This will not work against the deployed security rules.** The `/tasks`
-/// > update rule permits a member to change only `status`, `proofUrl`,
-/// > `lastUpdatedAt` and `completedAt`; `ownerUid` is deliberately absent so a
-/// > member cannot hand work to someone else. Every call here comes back
-/// > `permission-denied` until a release clause is added to `firestore.rules`
-/// > and deployed. See the ViewModel for what the member is told meanwhile.
+/// Permitted by the deployed rules through `isOwnerReleasingTask()` (Case 3
+/// under `/tasks`), which exists for this write specifically. That rule pins
+/// the incoming `ownerUid` to the empty string, so this may hand a task back to
+/// *nobody* but can never hand it to a *named* person — reassignment stays a
+/// leader's power. The field list below must keep matching the rule's
+/// `hasOnly`, or every release starts failing.
 ///
 /// Like the other services, this catches nothing. Firestore throws
 /// [FirebaseException]; the ViewModel turns it into something readable.
