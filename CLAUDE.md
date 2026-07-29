@@ -260,8 +260,10 @@ Rule of thumb: if a widget file imports `cloud_firestore`, something is in the w
 
 ## Current status
 
-**Group Member module — built, run and verified end to end.** Tested in Chrome and on an
-Android Pixel 6 API 34 emulator.
+**Group Member module — built, and run in Chrome.** The core journey below was also
+tested on an Android Pixel 6 API 34 emulator; the later features listed under it have
+only been confirmed in Chrome. Three things remain unverified anywhere — they are named
+explicitly further down, and that list is the honest edge of what can be claimed.
 
 Verified journey:
 
@@ -276,6 +278,27 @@ Verified journey:
 `streamTasksForUser` gained its `groupId` filter, the whole journey was run again in
 Chrome — Tasks, Timeline, Group tab, claim sheet and status changes all work under the
 live rules. Nothing here is pending re-checking.
+
+**Later features, confirmed on screen in Chrome.** Each of these was watched working, not
+merely compiled:
+
+- Task detail page, including all three of its actions
+- Proof link editing, and removing a proof
+- The overdue card treatment and the countdown wording on task cards
+- The avatar picker, with the choice surviving a page reload
+- The filter chips on My Tasks
+- The group member list on the Group tab
+
+**Not yet verified — do not describe these as working.** They pass `flutter analyze` and
+`flutter test`, which catch broken code, not a control in the wrong place, text that does
+not fit, or a state that never renders:
+
+- **Claim-sheet search** — never exercised.
+- **The leave-group confirmation dialog** — never seen on screen.
+- **Everything Android-side** — the launcher icon, the splash screen, and a proof link
+  actually opening a browser. The icon and splash are compiled into the APK, so a full
+  rebuild is needed rather than a hot reload, and the browser hand-off depends on the
+  `queries` block in `AndroidManifest.xml` that Chrome never exercises.
 
 **Firestore rules are DEPLOYED, and the file matches the live database.**
 `firestore.rules` is not a draft; every rule in it is what the live database enforces —
