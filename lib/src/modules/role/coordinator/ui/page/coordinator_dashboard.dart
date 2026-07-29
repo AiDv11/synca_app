@@ -6,8 +6,8 @@ import 'package:synca_app/src/modules/role/member/ui/widget/avatar_picker_sheet.
 import 'package:synca_app/src/modules/role/member/ui/widget/change_password_sheet.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/member_avatar.dart';
 import 'package:synca_app/src/modules/role/member/view_model/avatar_picker_view_model.dart';
-import 'package:synca_app/src/modules/role/coordinator/view_model/coordinator_view_model.dart';
-import 'package:synca_app/src/modules/role/coordinator/model/group_health.dart';
+import '../../view_model/coordinator_view_model.dart';
+import '../../model/group_health.dart';
 
 class CoordinatorDashboard extends StatefulWidget {
   final AppUser user;
@@ -38,7 +38,7 @@ class _CoordinatorDashboardState extends State<CoordinatorDashboard> {
           index: _selectedIndex,
           children: [
             _buildOverviewTab(),
-            const Center(child: Text('No flagged groups')),
+            _buildFlaggedTab(),
             _ProfileTab(user: widget.user),
           ],
         ),
@@ -71,10 +71,34 @@ class _CoordinatorDashboardState extends State<CoordinatorDashboard> {
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: _viewModel.filteredGroups.length,
-                itemBuilder: (context, index) => _GroupHealthCard(group: _viewModel.filteredGroups[index]),
+                itemBuilder: (context, index) => _GroupHealthCard(
+                  group: _viewModel.filteredGroups[index],
+                  onFlagToggle: () => _viewModel.toggleFlag(_viewModel.filteredGroups[index].groupId),
+                ),
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFlaggedTab() {
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        if (_viewModel.flaggedGroups.isEmpty) {
+          return const Center(
+            child: Text('No flagged groups', style: TextStyle(color: AppColors.charcoal)),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: _viewModel.flaggedGroups.length,
+          itemBuilder: (context, index) => _GroupHealthCard(
+            group: _viewModel.flaggedGroups[index],
+            onFlagToggle: () => _viewModel.toggleFlag(_viewModel.flaggedGroups[index].groupId),
+          ),
         );
       },
     );
@@ -112,7 +136,8 @@ class _CoordinatorDashboardState extends State<CoordinatorDashboard> {
 
 class _GroupHealthCard extends StatelessWidget {
   final GroupHealth group;
-  const _GroupHealthCard({required this.group});
+  final VoidCallback onFlagToggle;
+  const _GroupHealthCard({required this.group, required this.onFlagToggle});
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +146,14 @@ class _GroupHealthCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
       child: ListTile(
-        title: Text(group.groupName, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy)),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(group.groupName, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy)),
+            ),
+            if (group.isFlagged) const Icon(Icons.flag, color: AppColors.danger, size: 18),
+          ],
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -130,7 +162,11 @@ class _GroupHealthCard extends StatelessWidget {
             Text(group.reason, style: const TextStyle(fontSize: 13, color: AppColors.charcoal)),
           ],
         ),
-        trailing: const Icon(Icons.chevron_right, color: AppColors.charcoal),
+        trailing: IconButton(
+          icon: Icon(group.isFlagged ? Icons.flag : Icons.flag_outlined),
+          color: group.isFlagged ? AppColors.danger : AppColors.charcoal,
+          onPressed: onFlagToggle,
+        ),
         onTap: () => _showGroupDetails(context),
       ),
     );
@@ -143,13 +179,19 @@ class _GroupHealthCard extends StatelessWidget {
         padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(group.groupName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
             const Divider(height: 32),
             _row('Progress', '${(group.progress * 100).toInt()}%'),
+            _row('Total Tasks', group.totalTasks.toString()),
+            _row('Completed', group.completedTasks.toString()),
             _row('Overdue Tasks', group.overdueTasks.toString(), color: group.overdueTasks > 0 ? AppColors.danger : null),
             const SizedBox(height: 20),
-            const Text('Task titles and content are hidden for privacy.', style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12, color: AppColors.charcoal)),
+            const Text(
+              'Privacy Note: Detailed task titles and descriptions are restricted to group members.',
+              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 11, color: AppColors.charcoal),
+            ),
           ],
         ),
       ),
@@ -158,11 +200,13 @@ class _GroupHealthCard extends StatelessWidget {
 
   Widget _row(String label, String val, {Color? color}) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label), Text(val, style: TextStyle(fontWeight: FontWeight.bold, color: color))]),
+    child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      Text(label),
+      Text(val, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+    ]),
   );
 }
 
-/// The Profile Tab - Mirroring the Member Dashboard implementation
 class _ProfileTab extends StatefulWidget {
   final AppUser user;
   const _ProfileTab({required this.user});
@@ -266,16 +310,14 @@ class _ProfileTabState extends State<_ProfileTab> {
   );
 
   Future<void> _changePassword() async {
-    final messenger = ScaffoldMessenger.of(context);
     if (await showChangePasswordSheet(context) == true) {
-      messenger.showSnackBar(const SnackBar(content: Text('Password updated'), backgroundColor: AppColors.teal, behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password updated'), backgroundColor: AppColors.teal));
     }
   }
 
   Future<void> _changeAvatar() async {
-    final messenger = ScaffoldMessenger.of(context);
     if (await showAvatarPickerSheet(context: context, viewModel: _avatarViewModel) == true) {
-      messenger.showSnackBar(const SnackBar(content: Text('Avatar updated'), backgroundColor: AppColors.teal, behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Avatar updated'), backgroundColor: AppColors.teal));
     }
   }
 }

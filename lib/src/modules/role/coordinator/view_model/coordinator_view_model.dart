@@ -3,18 +3,20 @@ import 'package:synca_app/src/core/services/task_service.dart';
 import '../model/group_health.dart';
 
 class CoordinatorViewModel extends ChangeNotifier {
+  // ignore: unused_field
   final TaskService _taskService = TaskService();
 
   List<GroupHealth> _allGroups = [];
   List<GroupHealth> filteredGroups = [];
+  List<GroupHealth> flaggedGroups = [];
   RiskLevel? currentFilter;
   bool isLoading = true;
 
-  // Mocked for the UI implementation
   final List<GroupId> _monitoredGroups = [
     GroupId('g1', 'Alpha Squad'),
     GroupId('g2', 'Beta Builders'),
     GroupId('g3', 'Gamma Group'),
+    GroupId('g4', 'Delta Design'),
   ];
 
   CoordinatorViewModel() {
@@ -22,59 +24,71 @@ class CoordinatorViewModel extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    isLoading = true;
-    notifyListeners();
+    try {
+      isLoading = true;
+      notifyListeners();
 
-    List<GroupHealth> healthList = [];
-    for (var g in _monitoredGroups) {
-      final tasks = await _taskService.streamTasksForGroup(g.id).first;
-      healthList.add(_calculateHealth(g, tasks));
+      // Simulate network delay
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      // Mocking different states for demonstration
+      _allGroups = [
+        GroupHealth(
+          groupId: 'g1',
+          groupName: 'Alpha Squad',
+          totalTasks: 10,
+          completedTasks: 2,
+          overdueTasks: 3, // CRITICAL: Overdue tasks
+          lastActivity: DateTime.now().subtract(const Duration(days: 1)),
+          riskLevel: RiskLevel.critical,
+          reason: "3 overdue tasks",
+        ),
+        GroupHealth(
+          groupId: 'g2',
+          groupName: 'Beta Builders',
+          totalTasks: 8,
+          completedTasks: 3,
+          overdueTasks: 0, // AT RISK: Tight deadline, low progress
+          lastActivity: DateTime.now().subtract(const Duration(hours: 5)),
+          riskLevel: RiskLevel.atRisk,
+          reason: "Tight deadlines with <50% progress",
+        ),
+        GroupHealth(
+          groupId: 'g3',
+          groupName: 'Gamma Group',
+          totalTasks: 12,
+          completedTasks: 10,
+          overdueTasks: 0, // ON TRACK
+          lastActivity: DateTime.now().subtract(const Duration(minutes: 30)),
+          riskLevel: RiskLevel.onTrack,
+          reason: "All tasks on schedule",
+        ),
+        GroupHealth(
+          groupId: 'g4',
+          groupName: 'Delta Design',
+          totalTasks: 5,
+          completedTasks: 0,
+          overdueTasks: 0, // CRITICAL: Inactivity
+          lastActivity: DateTime.now().subtract(const Duration(days: 10)),
+          riskLevel: RiskLevel.critical,
+          reason: "No activity in 7+ days",
+        ),
+      ];
+
+      _applyFilter();
+    } catch (e) {
+      debugPrint("Error refreshing coordinator dashboard: $e");
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
-
-    _allGroups = healthList;
-    _applyFilter();
-    isLoading = false;
-    notifyListeners();
   }
 
-  GroupHealth _calculateHealth(GroupId group, List<dynamic> tasks) {
-    int total = tasks.length;
-    int completed = tasks.where((t) => t.status.name == 'completed').length;
-    int overdue = tasks.where((t) => t.deadline.isBefore(DateTime.now()) && t.status.name != 'completed').length;
-
-    DateTime? lastUpdate;
-    for(var t in tasks) {
-      if(lastUpdate == null || t.lastUpdatedAt.isAfter(lastUpdate)) {
-        lastUpdate = t.lastUpdatedAt;
-      }
-    }
-
-    RiskLevel level = RiskLevel.onTrack;
-    String reason = "All tasks on schedule";
-    final daysSinceActivity = lastUpdate != null ? DateTime.now().difference(lastUpdate).inDays : 99;
-
-    if (overdue > 0 || daysSinceActivity >= 7) {
-      level = RiskLevel.critical;
-      reason = overdue > 0 ? "$overdue overdue tasks" : "No activity in 7+ days";
-    } else {
-      double progress = total == 0 ? 0 : completed / total;
-      bool tightDeadline = tasks.any((t) => t.deadline.difference(DateTime.now()).inDays <= 3 && t.status.name != 'completed');
-      if (tightDeadline && progress < 0.5) {
-        level = RiskLevel.atRisk;
-        reason = "Tight deadlines with <50% progress";
-      }
-    }
-
-    return GroupHealth(
-      groupId: group.id,
-      groupName: group.name,
-      totalTasks: total,
-      completedTasks: completed,
-      overdueTasks: overdue,
-      lastActivity: lastUpdate,
-      riskLevel: level,
-      reason: reason,
-    );
+  void toggleFlag(String groupId) {
+    final group = _allGroups.firstWhere((g) => g.groupId == groupId);
+    group.isFlagged = !group.isFlagged;
+    _applyFilter();
+    notifyListeners();
   }
 
   void setFilter(RiskLevel? level) {
@@ -84,11 +98,17 @@ class CoordinatorViewModel extends ChangeNotifier {
   }
 
   void _applyFilter() {
+    // Standard Filter
     if (currentFilter == null) {
       filteredGroups = List.from(_allGroups);
     } else {
       filteredGroups = _allGroups.where((g) => g.riskLevel == currentFilter).toList();
     }
+
+    // Sort: Critical (0) -> At Risk (1) -> On Track (2)
     filteredGroups.sort((a, b) => a.riskLevel.index.compareTo(b.riskLevel.index));
+
+    // Flagged List
+    flaggedGroups = _allGroups.where((g) => g.isFlagged).toList();
   }
 }

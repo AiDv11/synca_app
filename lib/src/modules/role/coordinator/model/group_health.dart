@@ -18,6 +18,7 @@ class GroupHealth {
   final DateTime? lastActivity;
   final RiskLevel riskLevel;
   final String reason;
+  bool isFlagged; // Add this
 
   GroupHealth({
     required this.groupId,
@@ -28,6 +29,7 @@ class GroupHealth {
     this.lastActivity,
     required this.riskLevel,
     required this.reason,
+    this.isFlagged = false, // Add this
   });
 
   double get progress => totalTasks == 0 ? 0 : completedTasks / totalTasks;
