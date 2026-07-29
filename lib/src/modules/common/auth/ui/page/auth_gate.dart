@@ -168,7 +168,7 @@ class _RoleRouterState extends State<_RoleRouter> {
           case UserRole.leader:
             return const LeaderDashboard();
           case UserRole.coordinator:
-            return const CoordinatorDashboard();
+            return CoordinatorDashboard(user: user);
         }
       },
     );
