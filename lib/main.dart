@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'firebase_options.dart';
+import 'src/core/theme/app_colors.dart';
 import 'src/modules/common/auth/ui/page/auth_gate.dart';
 
 void main() async {
@@ -52,7 +53,16 @@ class MyApp extends StatelessWidget {
         //
         // This works for code too, not just values: Most code changes can be
         // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        // Seeded from the brand navy rather than Flutter's default purple.
+        //
+        // Almost every colour on screen is set explicitly from `AppColors`, so
+        // this scheme is not what paints the app — it is the fallback for the
+        // Material defaults nothing overrides: ink ripples, the text cursor,
+        // selection handles, the focus ring. Those were coming out purple.
+        //
+        // `fromSeed` derives a whole harmonised scheme from one colour, so this
+        // does not make those details *navy*; it makes them navy's relatives.
+        colorScheme: .fromSeed(seedColor: AppColors.navy),
       ),
       // AuthGate decides what is actually shown: the login page when nobody is
       // signed in, or the dashboard matching the signed-in user's role.
