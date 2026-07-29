@@ -6,6 +6,7 @@ import 'package:synca_app/src/core/utils/validators.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
 import 'package:synca_app/src/modules/common/auth/model/services/auth_service.dart';
 import 'package:synca_app/src/modules/common/auth/ui/page/login_page.dart';
+import 'package:synca_app/src/modules/common/widgets/synca_logo.dart';
 
 /// Sign-up screen: name, email, password, role.
 ///
@@ -128,6 +129,15 @@ class _RegisterPageState extends State<RegisterPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 24),
+
+                // Above the heading, in the same place and at the same size as
+                // on the other two screens. This page's heading is "Create
+                // account" rather than the wordmark, but the mark's position
+                // does not change — that is what makes the three read as one
+                // flow rather than three separate screens.
+                const Center(child: SyncaLogo()),
+                const SizedBox(height: 20),
+
                 Text(
                   'Create account',
                   textAlign: TextAlign.center,

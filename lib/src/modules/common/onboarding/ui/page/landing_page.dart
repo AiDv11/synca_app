@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/ui/page/login_page.dart';
 import 'package:synca_app/src/modules/common/auth/ui/page/register_page.dart';
+import 'package:synca_app/src/modules/common/widgets/synca_logo.dart';
 
 /// The public front door of the app — Figure 1 in the approved proposal.
 ///
@@ -48,6 +49,12 @@ class LandingPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 24),
+
+              // The mark sits above the wordmark rather than replacing it —
+              // this is the first screen anyone sees, and a logo alone would
+              // not tell a new student what the app is called.
+              const Center(child: SyncaLogo()),
+              const SizedBox(height: 20),
 
               Text(
                 'Synca',

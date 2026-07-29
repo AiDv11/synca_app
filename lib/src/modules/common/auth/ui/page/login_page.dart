@@ -5,6 +5,7 @@ import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/core/utils/validators.dart';
 import 'package:synca_app/src/modules/common/auth/model/services/auth_service.dart';
 import 'package:synca_app/src/modules/common/auth/ui/page/register_page.dart';
+import 'package:synca_app/src/modules/common/widgets/synca_logo.dart';
 
 /// Sign-in screen.
 ///
@@ -177,6 +178,12 @@ class _LoginPageState extends State<LoginPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
+
+                // Same mark, same size and radius as the landing page, so it
+                // holds still as the member moves from one to the other.
+                const Center(child: SyncaLogo()),
+                const SizedBox(height: 20),
+
                 Text(
                   'Synca',
                   textAlign: TextAlign.center,

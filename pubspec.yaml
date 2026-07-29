@@ -151,6 +151,19 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Assets bundled into the app and loadable at runtime.
+  #
+  # `assets/branding/` was until now a **build input only** — the icon and
+  # splash generators read it from disk when they run, which needs no
+  # declaration. Showing the mark on the landing, login and register pages
+  # means loading it at runtime, and that does.
+  #
+  # The single file, not the folder. Declaring `assets/branding/` would also
+  # bundle `icon_padded.png`, which is a generator input the app never displays
+  # — around 60 KB shipped to every user for nothing.
+  assets:
+    - assets/branding/icon.png
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
