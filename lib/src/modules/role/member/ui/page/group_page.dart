@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:synca_app/src/core/theme/app_colors.dart';
 import 'package:synca_app/src/modules/common/auth/model/entity/app_user.dart';
+import 'package:synca_app/src/modules/role/member/ui/widget/group_member_row.dart';
 import 'package:synca_app/src/modules/role/member/ui/widget/leave_group_dialog.dart';
 import 'package:synca_app/src/modules/role/member/view_model/group_view_model.dart';
 
@@ -239,6 +240,134 @@ class _GroupPageState extends State<GroupPage> {
   // Already in a group
   // ---------------------------------------------------------------------------
 
+  /// The white card listing everyone in the group.
+  ///
+  /// Replaces the placeholder that used to sit here. It is a plain [Column] of
+  /// rows rather than a `ListView`: the whole tab is already inside a
+  /// `SingleChildScrollView`, and a second scrollable nested in the first is
+  /// the usual cause of a list that will not scroll, or one that fights the
+  /// page for the drag.
+  ///
+  /// A coursework group is a handful of people, so building every row up front
+  /// costs nothing. If a group could ever hold hundreds, this becomes a
+  /// `ListView` and the page stops scrolling as one piece.
+  Widget _buildMembersCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.groups_outlined, size: 18, color: AppColors.navy),
+              const SizedBox(width: 8),
+              const Text(
+                'Group members',
+                style: TextStyle(
+                  color: AppColors.navy,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              // The count is worth showing even while the list is short — it is
+              // the quickest way to spot that somebody has not joined yet.
+              if (!_viewModel.isLoadingMembers &&
+                  _viewModel.membersErrorMessage == null)
+                Text(
+                  '${_viewModel.members.length}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.charcoal,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          _buildMembersBody(),
+        ],
+      ),
+    );
+  }
+
+  /// Picks one of four bodies: loading, error, alone, or the list.
+  Widget _buildMembersBody() {
+    if (_viewModel.isLoadingMembers) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: SizedBox(
+            height: 22,
+            width: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppColors.teal,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final error = _viewModel.membersErrorMessage;
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.cloud_off, size: 18, color: AppColors.skyBlue),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                error,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.charcoal,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final members = _viewModel.members;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final member in members)
+          GroupMemberRow(
+            member: member,
+            isSignedInUser: member.uid == widget.user.uid,
+          ),
+
+        // Shown *under* the list rather than instead of it: the member is still
+        // in that list, with their own workload, and hiding it to say "nobody
+        // else is here" would throw away the useful half of the answer.
+        if (_viewModel.isAloneInGroup) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Nobody else has joined ${_viewModel.groupId} yet. '
+            'Share the code above with your group.',
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.charcoal.withValues(alpha: 0.7),
+              height: 1.4,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildJoined() {
     final isBusy = _viewModel.isSubmitting;
 
@@ -286,36 +415,7 @@ class _GroupPageState extends State<GroupPage> {
         ),
         const SizedBox(height: 16),
 
-        // Honest about what this tab does and does not do yet.
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(
-                Icons.info_outline,
-                size: 20,
-                color: AppColors.skyBlue,
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Your group mates and their workload will appear here once '
-                  'the group board is built.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.charcoal,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        _buildMembersCard(),
 
         if (_viewModel.errorMessage != null) ...[
           const SizedBox(height: 12),

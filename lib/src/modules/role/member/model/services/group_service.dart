@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'package:synca_app/src/modules/role/member/model/group_member.dart';
+
 /// Writes a member's group membership to their user document.
 ///
 /// A service rather than Firestore calls inside the ViewModel, because
@@ -38,5 +40,37 @@ class GroupService {
   /// account with no profile — the orphaned-account case `AuthGate` handles.
   Future<void> setGroupId({required String uid, required String groupId}) {
     return _users.doc(uid).update({'groupId': groupId});
+  }
+
+  /// Everyone in [groupId], updating live as people join and leave.
+  ///
+  /// ## Why this query is allowed
+  ///
+  /// The `/users` read rule permits your own document or one in your group.
+  /// Firestore rules are not filters — a query is refused outright unless its
+  /// constraints prove every possible result passes — and `where('groupId',
+  /// isEqualTo: myGroup)` proves exactly that. An unfiltered read of `/users`
+  /// would be rejected, which is what stops the collection being harvested.
+  ///
+  /// ## Why there is no `orderBy`
+  ///
+  /// Sorting happens in the ViewModel, and not only to avoid an index: the
+  /// signed-in member sorts first regardless of their name, which is not
+  /// something Firestore can express. A single `where` on one field needs only
+  /// the single-field index Firestore creates automatically — adding `orderBy`
+  /// on a different field is what would demand a composite index.
+  ///
+  /// The document id is passed as the uid rather than the `uid` field: both
+  /// agree — the create rule forces it — but the id is the one Firestore
+  /// guarantees, and it is what tasks store in `ownerUid`.
+  Stream<List<GroupMember>> streamMembers(String groupId) {
+    return _users
+        .where('groupId', isEqualTo: groupId)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => GroupMember.fromMap(doc.data(), uid: doc.id))
+              .toList(),
+        );
   }
 }
